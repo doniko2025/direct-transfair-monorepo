@@ -1,6 +1,13 @@
 // apps/direct-transfair-mobile/app/index.tsx
 // =========================================================
-// ACCUEIL v6.2 — Direct Transf'air (white-label)
+// ACCUEIL v6.5 — Direct Transf'air (white-label)
+// ✅ v6.5 : proposition « B » — la carte du simulateur CHEVAUCHE le panneau du bas (lueur teintée par la couleur de la société) ; le panneau
+//    contient le bandeau « 3 étapes » (icônes), les boutons et les conditions, et descend jusqu'en bas de l'écran (plus de vide). Logo / montants
+//    plus grands sur les écrans hauts. Couleurs toujours 100 % dynamiques.
+// ✅ v6.4 : (1) OMBRE MARQUÉE sous la carte du simulateur (double ombre + liseré) et sous la carte d'actions ; (2) MOINS DE VIDE : le panneau de couleur
+//    enveloppe maintenant exactement les boutons (au lieu d'une hauteur fixe de 330) et les éléments sont plus grands (logo 64, montants 28) ;
+//    (3) bandeau « 3 étapes » (Créez votre compte · Ajoutez un bénéficiaire · Envoyez votre argent) dans l'espace libre — masqué clavier ouvert et sur petit écran (< 700 px de haut).
+//    COULEURS : toujours 100 % dynamiques (couleur principale / accent de la société, thème clair / sombre). Taux, frais, navigation : inchangés.
 // ✅ v6.3 : page COMPACTE sans défilement — marque 20, montants 22 (comme les cartes de l'accueil), pastilles et boutons `compact` (48), marges réduites.
 // ✅ v6.2 : (1) l'accueil est enfin la page PAR DÉFAUT (le garde de navigation d'AuthProvider ne renvoie plus vers la connexion : il faut un appui sur
 //    « Se connecter » / « S'inscrire ») ; (2) boutons EMPILÉS pleine largeur : « Se connecter » n'est plus tronqué ; (3) le montant « Ils reçoivent »
@@ -22,13 +29,14 @@
 // =========================================================
 
 import React, { useEffect, useMemo, useState } from "react";
-import { AppState, Platform, Pressable, ScrollView, StatusBar, View } from "react-native";
+import { AppState, Platform, Pressable, ScrollView, StatusBar, View, useWindowDimensions, type ViewStyle } from "react-native";
 import { useRouter } from "expo-router";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
-import { useUI, SYSTEM_FONT } from "../components/ui/theme";
+import { useUI, SYSTEM_FONT, alpha } from "../components/ui/theme";
 import { Button } from "../components/ui/Primitives";
 import { ChoiceSheet } from "../components/ui/ChoiceSheet";
 import { Ionicons } from "../components/ui/Icon";
+import { useKeyboardOpen } from "../components/ui/Layout";
 import BrandLogo from "../components/brand/BrandLogo";
 import { safeTop } from "../utils/safeArea";
 import { CurrencyFlag } from "../components/home/HomeParts";
@@ -50,6 +58,24 @@ const RECEIVE_COUNTRY: Record<string, string> = { GNF: "GN" };
 
 type FeeEst = { WALLET: number | null; CASH_PICKUP: number | null };
 
+/** Lueur de la carte du simulateur : ombre longue teintée par la couleur principale de la société + ombre courte neutre (v6.5). */
+function glowShadow(color: string): ViewStyle {
+  return Platform.select<ViewStyle>({
+    web: { boxShadow: `0 22px 46px -10px ${alpha(color, 0.42)}, 0 6px 14px rgba(0,0,0,0.10)` } as any,
+    default: { shadowColor: color, shadowOffset: { width: 0, height: 16 }, shadowOpacity: 0.38, shadowRadius: 24, elevation: 12 },
+  }) as ViewStyle;
+}
+
+/** Hauteur de la carte qui « déborde » sur le panneau du bas. */
+const OVERLAP = 44;
+
+/** Les 3 étapes affichées entre le simulateur et les boutons. */
+const STEPS = [
+  { icon: "person-outline", label: "land.step1" },
+  { icon: "people-outline", label: "land.step2" },
+  { icon: "paper-plane-outline", label: "land.step3" },
+] as const;
+
 /** Devises de réception proposées : toutes celles pour lesquelles un taux EUR → devise est publié (sens direct ou inverse). */
 function targetsFrom(rates: ExchangeRate[]): string[] {
   const found = new Set<string>();
@@ -68,6 +94,10 @@ export default function Index() {
   const { C, R, S } = useUI();
   const { branding } = useTenant();
   const insets = useSafeAreaInsets();
+  const kb = useKeyboardOpen();                         // clavier ouvert : on masque le bandeau « 3 étapes » pour garder la place aux montants
+  const { height: winH } = useWindowDimensions();
+  const showSteps = !kb && winH >= 700;                 // petit écran : pas de bandeau (la page ne doit pas défiler)
+  const roomy = winH >= 760;                            // grand écran : logo, montants et carte plus généreux (moins de vide)
 
   const [rates, setRates] = useState<ExchangeRate[] | null>(null);   // null = chargement
   const [raw, setRaw] = useState("1");                 // montant tapé dans « Vous envoyez »
@@ -162,112 +192,134 @@ export default function Index() {
         showsVerticalScrollIndicator={false}
         automaticallyAdjustKeyboardInsets
       >
-        {/* Panneau du bas : couleur d'accent pleine, coins arrondis (derrière les cartes) */}
-        <View
-          pointerEvents="none"
-          style={{ position: "absolute", left: 0, right: 0, bottom: 0, height: 330, backgroundColor: C.accent, borderTopLeftRadius: 36, borderTopRightRadius: 36 }}
-        />
-
-        <View style={{ flexGrow: 1, width: "100%", maxWidth: 480, alignSelf: "center", paddingHorizontal: 20, paddingTop: top, paddingBottom: bottom }}>
-          {/* ── Marque ── */}
-          <Reveal delay={0} distance={-12}>
-            <View style={{ alignItems: "center", gap: 6 }}>
-              <BrandLogo size={56} />
-              <Text style={{ fontFamily: SYSTEM_FONT, fontSize: 20, lineHeight: 25, fontWeight: "800", letterSpacing: -0.4, color: C.accentDeep }} numberOfLines={1}>
-                {branding.name}
-              </Text>
-              {!!branding.tagline && (
-                <Text style={{ fontFamily: SYSTEM_FONT, fontSize: 12, lineHeight: 16, color: C.muted, textAlign: "center" }} numberOfLines={2}>
-                  {branding.tagline}
+        <View style={{ flexGrow: 1 }}>
+          {/* ── Partie haute : marque + simulateur ── */}
+          <View style={{ width: "100%", maxWidth: 480, alignSelf: "center", paddingHorizontal: 20, paddingTop: top, zIndex: 2 }}>
+            {/* ── Marque ── */}
+            <Reveal delay={0} distance={-12}>
+              <View style={{ alignItems: "center", gap: 6 }}>
+                <BrandLogo size={roomy ? 80 : 64} />
+                <Text style={{ fontFamily: SYSTEM_FONT, fontSize: roomy ? 23 : 21, lineHeight: roomy ? 28 : 26, fontWeight: "800", letterSpacing: -0.4, color: C.accentDeep }} numberOfLines={1}>
+                  {branding.name}
                 </Text>
-              )}
-            </View>
-          </Reveal>
-
-          {/* ── Simulateur ── */}
-          <Reveal delay={140} style={{ marginTop: 12 }}>
-            <View style={[{ backgroundColor: C.surface, borderRadius: R.xl, padding: 16 }, S.md]}>
-              <Text style={{ fontFamily: SYSTEM_FONT, fontSize: 12, color: C.muted }}>{t("land.youSend")}</Text>
-              <View style={{ flexDirection: "row", alignItems: "center", justifyContent: "space-between", gap: 12, borderBottomWidth: 1, borderBottomColor: C.line }}>
-                <TextInput
-                  style={{ flex: 1, minWidth: 0, height: 44, padding: 0, fontFamily: SYSTEM_FONT, fontSize: amountFontFor(groupAmount(sendText), 22), fontWeight: "800", color: C.ink }}
-                  value={groupAmount(sendText)}
-                  onChangeText={(v) => { setSource("SEND"); setRaw(sanitizeAmountInput(v, decimalsFor(FROM))); }}
-                  keyboardType="decimal-pad"
-                  placeholder="0"
-                  placeholderTextColor={C.faint}
-                  underlineColorAndroid="transparent"
-                  selectTextOnFocus
-                  accessibilityLabel={t("land.youSend")}
-                />
-                {currencyChip(FROM)}
+                {!!branding.tagline && (
+                  <Text style={{ fontFamily: SYSTEM_FONT, fontSize: 12, lineHeight: 16, color: C.muted, textAlign: "center" }} numberOfLines={2}>
+                    {branding.tagline}
+                  </Text>
+                )}
               </View>
+            </Reveal>
 
-              <Text style={{ fontFamily: SYSTEM_FONT, fontSize: 12, color: C.muted, marginTop: 10 }}>{t("land.theyReceive")}</Text>
-              <View style={{ flexDirection: "row", alignItems: "center", justifyContent: "space-between", gap: 12, borderBottomWidth: 1, borderBottomColor: C.line }}>
-                <TextInput
-                  style={{ flex: 1, minWidth: 0, height: 44, padding: 0, fontFamily: SYSTEM_FONT, fontSize: amountFontFor(groupAmount(recvText), 22), fontWeight: "800", color: rate === null ? C.faint : C.ink }}
-                  value={rate === null ? "" : groupAmount(recvText)}
-                  onChangeText={(v) => { setSource("RECV"); setRawRecv(sanitizeAmountInput(v, dRecv)); }}
-                  keyboardType="decimal-pad"
-                  placeholder={rate === null ? "—" : "0"}
-                  placeholderTextColor={C.faint}
-                  editable={rate !== null}
-                  underlineColorAndroid="transparent"
-                  selectTextOnFocus
-                  accessibilityLabel={t("land.theyReceive")}
-                />
-                {currencyChip(target, targets.length > 1 ? () => setPickOpen(true) : undefined)}
+            {/* ── Simulateur ── */}
+            <Reveal delay={140} style={{ marginTop: roomy ? 22 : 16 }}>
+              <View style={[{ backgroundColor: C.surface, borderRadius: R.xl, padding: roomy ? 22 : 18 }, glowShadow(C.sun)]}>
+                <Text style={{ fontFamily: SYSTEM_FONT, fontSize: 12, color: C.muted }}>{t("land.youSend")}</Text>
+                <View style={{ flexDirection: "row", alignItems: "center", justifyContent: "space-between", gap: 12, borderBottomWidth: 1, borderBottomColor: C.line }}>
+                  <TextInput
+                    style={{ flex: 1, minWidth: 0, height: roomy ? 58 : 50, padding: 0, fontFamily: SYSTEM_FONT, fontSize: amountFontFor(groupAmount(sendText), roomy ? 34 : 28), fontWeight: "800", color: C.ink }}
+                    value={groupAmount(sendText)}
+                    onChangeText={(v) => { setSource("SEND"); setRaw(sanitizeAmountInput(v, decimalsFor(FROM))); }}
+                    keyboardType="decimal-pad"
+                    placeholder="0"
+                    placeholderTextColor={C.faint}
+                    underlineColorAndroid="transparent"
+                    selectTextOnFocus
+                    accessibilityLabel={t("land.youSend")}
+                  />
+                  {currencyChip(FROM)}
+                </View>
+
+                <Text style={{ fontFamily: SYSTEM_FONT, fontSize: 12, color: C.muted, marginTop: roomy ? 16 : 12 }}>{t("land.theyReceive")}</Text>
+                <View style={{ flexDirection: "row", alignItems: "center", justifyContent: "space-between", gap: 12, borderBottomWidth: 1, borderBottomColor: C.line }}>
+                  <TextInput
+                    style={{ flex: 1, minWidth: 0, height: roomy ? 58 : 50, padding: 0, fontFamily: SYSTEM_FONT, fontSize: amountFontFor(groupAmount(recvText), roomy ? 34 : 28), fontWeight: "800", color: rate === null ? C.faint : C.ink }}
+                    value={rate === null ? "" : groupAmount(recvText)}
+                    onChangeText={(v) => { setSource("RECV"); setRawRecv(sanitizeAmountInput(v, dRecv)); }}
+                    keyboardType="decimal-pad"
+                    placeholder={rate === null ? "—" : "0"}
+                    placeholderTextColor={C.faint}
+                    editable={rate !== null}
+                    underlineColorAndroid="transparent"
+                    selectTextOnFocus
+                    accessibilityLabel={t("land.theyReceive")}
+                  />
+                  {currencyChip(target, targets.length > 1 ? () => setPickOpen(true) : undefined)}
+                </View>
+
+                <Text style={{ fontFamily: SYSTEM_FONT, fontSize: 12.5, color: C.accentDeep, fontWeight: "600", textAlign: "center", marginTop: roomy ? 16 : 12 }}>{rateText}</Text>
+
+                {feeEst && (
+                  <Reveal pop style={{ marginTop: 8 }}>
+                    <View style={{ flexDirection: "row", flexWrap: "wrap", justifyContent: "center", gap: 8 }}>
+                      {([["WALLET", "send.wallet", "phone-portrait-outline"], ["CASH_PICKUP", "send.cash", "cash-outline"]] as const).map(([k, label, icon]) => {
+                        const f = feeEst[k];
+                        if (f === null) return null;
+                        return (
+                          <View key={k} style={{ flexDirection: "row", alignItems: "center", gap: 6, paddingHorizontal: 10, paddingVertical: 5, borderRadius: R.pill ?? 999, backgroundColor: f === 0 ? C.posBg : C.accentSoft, borderWidth: 1, borderColor: f === 0 ? C.posLine : C.accentLine }}>
+                            <Ionicons name={icon} size={14} color={f === 0 ? C.pos : C.accentDeep} />
+                            <Text style={{ fontFamily: SYSTEM_FONT, fontSize: 11.5, fontWeight: "700", color: f === 0 ? C.pos : C.accentDeep }}>
+                              {t(label)} · {f === 0 ? t("land.feesFree") : t("land.feesAmount", { amount: fmtMoney(f, FROM) })}
+                            </Text>
+                          </View>
+                        );
+                      })}
+                    </View>
+                    <Text style={{ fontFamily: SYSTEM_FONT, fontSize: 10.5, color: C.muted, textAlign: "center", marginTop: 6 }}>{t("land.feesNote")}</Text>
+                  </Reveal>
+                )}
               </View>
+            </Reveal>
+          </View>
 
-              <Text style={{ fontFamily: SYSTEM_FONT, fontSize: 12.5, color: C.accentDeep, fontWeight: "600", textAlign: "center", marginTop: 10 }}>{rateText}</Text>
+          {/* ── Panneau du bas : démarre derrière la carte (elle le chevauche) et descend jusqu'au bas de l'écran ── */}
+          <View style={{ flexGrow: 1, marginTop: -OVERLAP, zIndex: 1, backgroundColor: C.accent, borderTopLeftRadius: 36, borderTopRightRadius: 36, paddingTop: OVERLAP + 14, paddingBottom: Math.max(bottom, 12) }}>
+            <View style={{ flexGrow: 1, minHeight: 8 }} />
 
-              {feeEst && (
-                <Reveal pop style={{ marginTop: 8 }}>
-                  <View style={{ flexDirection: "row", flexWrap: "wrap", justifyContent: "center", gap: 8 }}>
-                    {([["WALLET", "send.wallet", "phone-portrait-outline"], ["CASH_PICKUP", "send.cash", "cash-outline"]] as const).map(([k, label, icon]) => {
-                      const f = feeEst[k];
-                      if (f === null) return null;
-                      return (
-                        <View key={k} style={{ flexDirection: "row", alignItems: "center", gap: 6, paddingHorizontal: 10, paddingVertical: 5, borderRadius: R.pill ?? 999, backgroundColor: f === 0 ? C.posBg : C.accentSoft, borderWidth: 1, borderColor: f === 0 ? C.posLine : C.accentLine }}>
-                          <Ionicons name={icon} size={14} color={f === 0 ? C.pos : C.accentDeep} />
-                          <Text style={{ fontFamily: SYSTEM_FONT, fontSize: 11.5, fontWeight: "700", color: f === 0 ? C.pos : C.accentDeep }}>
-                            {t(label)} · {f === 0 ? t("land.feesFree") : t("land.feesAmount", { amount: fmtMoney(f, FROM) })}
-                          </Text>
-                        </View>
-                      );
-                    })}
-                  </View>
-                  <Text style={{ fontFamily: SYSTEM_FONT, fontSize: 10.5, color: C.muted, textAlign: "center", marginTop: 6 }}>{t("land.feesNote")}</Text>
-                </Reveal>
-              )}
+            {/* ── 3 étapes (masquées clavier ouvert et sur les petits écrans) ── */}
+            {showSteps && (
+              <Reveal delay={240}>
+                <View style={{ width: "100%", maxWidth: 480, alignSelf: "center", paddingHorizontal: 24, flexDirection: "row", gap: 6 }}>
+                  {STEPS.map((st) => (
+                    <View key={st.label} style={{ flex: 1, alignItems: "center", gap: 6 }}>
+                      <View style={[{ width: 40, height: 40, borderRadius: 14, backgroundColor: C.surface, alignItems: "center", justifyContent: "center" }, S.md]}>
+                        <Ionicons name={st.icon} size={19} color={C.sun} />
+                      </View>
+                      <Text style={{ fontFamily: SYSTEM_FONT, fontSize: 11.5, lineHeight: 14, fontWeight: "700", color: C.accentInk, textAlign: "center" }} numberOfLines={3}>
+                        {t(st.label)}
+                      </Text>
+                    </View>
+                  ))}
+                </View>
+              </Reveal>
+            )}
+
+            <View style={{ flexGrow: showSteps ? 0.8 : 0, minHeight: showSteps ? 18 : 0 }} />
+
+            <View style={{ width: "100%", maxWidth: 480, alignSelf: "center", paddingHorizontal: 20 }}>
+              {/* ── Actions ── */}
+              <Reveal delay={300}>
+                <View style={[{ backgroundColor: C.surface, borderRadius: R.xl, padding: 12, gap: 8 }, S.lg]}>
+                  {/* Empilés, pleine largeur : les libellés ne sont jamais tronqués (quelle que soit la langue ou la taille de police). */}
+                  <Button compact label={t("land.signUp")} onPress={() => router.push("/(auth)/account-type")} testID="land-signup" />
+                  <Button compact label={t("land.signIn")} kind="outline" onPress={() => router.push("/(auth)/login-v2")} testID="land-signin" />
+                </View>
+              </Reveal>
+
+              <Reveal delay={400} distance={8} style={{ marginTop: 12 }}>
+                <Text style={{ textAlign: "center", fontFamily: SYSTEM_FONT, fontSize: 11, color: C.accentInk, lineHeight: 15 }}>
+                  {t("land.byContinuing")}
+                  <Text style={{ color: C.accentInk, fontWeight: "700", textDecorationLine: "underline" }} onPress={() => router.push("/(auth)/terms")}>
+                    {t("land.terms")}
+                  </Text>
+                  {t("land.and")}
+                  <Text style={{ color: C.accentInk, fontWeight: "700", textDecorationLine: "underline" }} onPress={() => router.push("/(auth)/privacy-policy")}>
+                    {t("land.privacy")}
+                  </Text>
+                  .
+                </Text>
+              </Reveal>
             </View>
-          </Reveal>
-
-          <View style={{ flexGrow: 1, minHeight: 10 }} />
-
-          {/* ── Actions ── */}
-          <Reveal delay={300} style={{ marginTop: 12 }}>
-            <View style={[{ backgroundColor: C.surface, borderRadius: R.xl, padding: 12, gap: 8 }, S.md]}>
-              {/* Empilés, pleine largeur : les libellés ne sont jamais tronqués (quelle que soit la langue ou la taille de police). */}
-              <Button compact label={t("land.signUp")} onPress={() => router.push("/(auth)/account-type")} testID="land-signup" />
-              <Button compact label={t("land.signIn")} kind="outline" onPress={() => router.push("/(auth)/login-v2")} testID="land-signin" />
-            </View>
-          </Reveal>
-
-          <Reveal delay={400} distance={8} style={{ marginTop: 10 }}>
-            <Text style={{ textAlign: "center", fontFamily: SYSTEM_FONT, fontSize: 11, color: C.accentInk, lineHeight: 15 }}>
-              {t("land.byContinuing")}
-              <Text style={{ color: C.accentInk, fontWeight: "700", textDecorationLine: "underline" }} onPress={() => router.push("/(auth)/terms")}>
-                {t("land.terms")}
-              </Text>
-              {t("land.and")}
-              <Text style={{ color: C.accentInk, fontWeight: "700", textDecorationLine: "underline" }} onPress={() => router.push("/(auth)/privacy-policy")}>
-                {t("land.privacy")}
-              </Text>
-              .
-            </Text>
-          </Reveal>
+          </View>
         </View>
       </ScrollView>
 

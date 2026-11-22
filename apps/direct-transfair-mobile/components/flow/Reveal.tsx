@@ -3,6 +3,7 @@
 // REVEAL v1.0 — Direct Transf'air
 // Apparition douce d'un bloc (fondu + glissement vers le haut), avec un délai pour faire arriver les éléments « en cascade ».
 // Respecte l'option système « réduire les animations » : le bloc est alors affiché tout de suite.
+// ✅ v1.1 : prop `fromX` (glissement horizontal, utilisée par les étapes de l'écran de connexion). Sans elle : rendu inchangé.
 // Aucune couleur ici : le composant n'habille rien, il anime seulement ce qu'on lui donne.
 // =========================================================
 
@@ -19,10 +20,12 @@ type Props = {
   duration?: number;
   /** Ajoute un léger effet de « rebond » (pastilles, coches). */
   pop?: boolean;
+  /** Glissement horizontal (px, positif = vient de la droite, négatif = vient de la gauche) à la place du glissement vertical. */
+  fromX?: number;
   style?: StyleProp<ViewStyle>;
 };
 
-export default function Reveal({ children, delay = 0, distance = 14, duration = 480, pop = false, style }: Props) {
+export default function Reveal({ children, delay = 0, distance = 14, duration = 480, pop = false, fromX, style }: Props) {
   const reduce = useReduceMotion();
   const v = useRef(new Animated.Value(0)).current;
 
@@ -45,7 +48,9 @@ export default function Reveal({ children, delay = 0, distance = 14, duration = 
           transform: [
             pop
               ? { scale: v.interpolate({ inputRange: [0, 1], outputRange: [0.6, 1] }) }
-              : { translateY: v.interpolate({ inputRange: [0, 1], outputRange: [distance, 0] }) },
+              : fromX !== undefined
+                ? { translateX: v.interpolate({ inputRange: [0, 1], outputRange: [fromX, 0] }) }
+                : { translateY: v.interpolate({ inputRange: [0, 1], outputRange: [distance, 0] }) },
           ],
         },
       ]}

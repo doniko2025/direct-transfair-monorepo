@@ -1,4 +1,10 @@
 // apps/direct-transfair-mobile/app/(auth)/login-v2.tsx
+// ✅ v6.0 : CONNEXION EN 2 ÉTAPES (téléphone). Étape 1 : logo en haut, numéro de téléphone + « Continuer », puis les autres façons de se connecter
+//    (Email et mot de passe, Code reçu par email) et « Créer un compte ». Étape 2 : même logo, rappel du numéro (« Modifier »), code secret à
+//    6 chiffres (connexion automatique au 6e chiffre), empreinte, « Code oublié ? », « Se connecter autrement ». Numéro mémorisé sur l'appareil →
+//    l'écran s'ouvre directement sur l'étape 2. Flèche retour / bouton retour Android : étape 2 → étape 1. « Continuer » ne contacte PAS le
+//    serveur (aucune fuite sur l'existence d'un compte). Les écrans « code reçu par email » reprennent le même cadre (logo + cartes).
+//    Cadre SimpleAuthShell v2.0 (logo, progression, contenu réparti sans grand vide) + AuthCards. LOGIQUE DE CONNEXION, appels API et testID inchangés.
 // ✅ v5.2 : écran COMPACT sans défilement (même avec le clavier) — titre 24, champs / boutons `dense`, marges réduites, polices alignées sur l'accueil.
 // ✅ v5.1 : « Connexion » + empreinte (icône seule, ronde) sur UNE ligne ; les deux autres façons (« Email et mot de passe » / « Code reçu par email »)
 //    sur UNE seule ligne, côte à côte, icône au-dessus du libellé ; en-tête jamais sous la barre d'état (SimpleAuthShell).
@@ -110,7 +116,7 @@
 // =========================================================
 
 import React, { useCallback, useEffect, useRef, useState } from 'react';
-import { Alert, Platform, StyleSheet, TouchableOpacity, View } from 'react-native';
+import { Alert, BackHandler, Keyboard, Platform, StyleSheet, TouchableOpacity, View } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useFocusEffect, useLocalSearchParams, useRouter } from 'expo-router';
 import { Ionicons } from '../../components/ui/Icon';
@@ -129,8 +135,9 @@ import {
   setBiometricsEnabled,
 } from '../../hooks/useBiometrics';
 
-import AuthShell, { useAuthPalette } from '../../components/auth/AuthShell';
+import { useAuthPalette } from '../../components/auth/AuthShell';
 import SimpleAuthShell from '../../components/auth/SimpleAuthShell';
+import { AuthCard, OptionList, PhoneRecap, type OptionItem } from '../../components/auth/AuthCards';
 import Reveal from '../../components/flow/Reveal';
 import AuthField        from '../../components/auth/AuthField';
 import PinInput from '../../components/auth/PinInput';
@@ -176,6 +183,9 @@ export default function LoginV2Screen() {
 
   // ── Méthode de connexion : téléphone + code (défaut) ou email + mot de passe (option) ──
   const [method, setMethod]       = useState<Method>('PHONE');
+  const [step, setStep]           = useState<1 | 2>(1);          // téléphone : 1 = numéro, 2 = code secret
+  const [dir, setDir]             = useState<1 | -1>(1);         // sens du glissement entre les étapes
+  const [booted, setBooted]       = useState(false);             // numéro mémorisé lu : évite un flash de l'étape 1
   const [country, setCountry]     = useState<AuthCountry>(findCountry('France') ?? AUTH_COUNTRIES[0]!);
   const [phone, setPhone]         = useState('');
   const [phoneErr, setPhoneErr]   = useState<string | null>(null);
@@ -185,14 +195,17 @@ export default function LoginV2Screen() {
   const [emailErr, setEmailErr]   = useState<string | null>(null);
   const passRef = useRef<TextInput | null>(null);
 
-  // Dernier numéro et dernier indicatif utilisés sur cet appareil
+  // Dernier numéro et dernier indicatif utilisés sur cet appareil : s'ils existent, on arrive directement à la saisie du code (étape 2).
   useEffect(() => {
     (async () => {
+      let remembered = '';
       try {
         const [p, c] = await Promise.all([AsyncStorage.getItem(LAST_PHONE_KEY), AsyncStorage.getItem(LAST_COUNTRY_KEY)]);
         if (c) { const found = findCountry(c); if (found) setCountry(found); }
-        if (p) setPhone(p);
+        if (p) { setPhone(p); remembered = p; }
       } catch { /* mémoire locale indisponible : on part d'un formulaire vide */ }
+      if (remembered && validatePhone(remembered) === null) setStep(2);
+      setBooted(true);
     })();
   }, []);
 
@@ -461,6 +474,31 @@ export default function LoginV2Screen() {
     setView(next);
   };
 
+  // Étape 2 → 1 (« Modifier », « Se connecter autrement », flèche retour)
+  const backToPhone = () => {
+    setNotice(null);
+    setPin('');
+    Keyboard.dismiss();
+    setDir(-1);
+    setStep(1);
+  };
+
+  const onBackPress = () => {
+    if (method === 'PHONE' && step === 2) { backToPhone(); return; }
+    if (router.canGoBack()) router.back(); else router.replace('/');
+  };
+
+  // Bouton retour d'Android : même comportement que la flèche (étape 2 → étape 1).
+  const onBackPressRef = useRef(onBackPress);
+  onBackPressRef.current = onBackPress;
+  const stepTwo = method === 'PHONE' && step === 2;
+  const onStepTwoScreen = view === 'PASSWORD' && stepTwo;   // le bouton retour d'Android ne doit agir que sur l'écran principal
+  useEffect(() => {
+    if (!onStepTwoScreen || Platform.OS !== 'android') return;
+    const sub = BackHandler.addEventListener('hardwareBackPress', () => { onBackPressRef.current(); return true; });
+    return () => sub.remove();
+  }, [onStepTwoScreen]);
+
   // ─────────────────────────────────────────────────────
   // RENDU
   // ─────────────────────────────────────────────────────
@@ -500,222 +538,290 @@ export default function LoginV2Screen() {
   // ── Étape : saisie du code reçu ───────────────────────
   if (view === 'OTP_VERIFY') {
     return (
-      <AuthShell
-        compact
+      <SimpleAuthShell
         title={t('otp.enterCode')}
         subtitle={maskedRec ? t('otp.sentTo', { to: maskedRec }) : t('otp.sentJustNow')}
         onBack={() => switchView('OTP_REQUEST')}
         headerRight={pill}
         below={legalFooter}
+        spread={false}
       >
         {notice ? <AuthNotice {...notice} /> : null}
-        <OtpCodeInput
-          value={otpCode}
-          onChange={(c) => { setOtpCode(c); if (otpWrong) setOtpWrong(false); }}
-          onComplete={verifyOtp}
-          accent={P.accent}
-          error={otpWrong}
-          disabled={loading}
-        />
-        <View style={{ height: 22 }} />
-        <AuthButton
-          label={t('otp.validate')}
-          accent={P.action}
-          loading={loading}
-          disabled={otpCode.length < 6}
-          onPress={() => verifyOtp(otpCode)}
-        />
-        <View style={s.centerRow}>
-          {countdown > 0 ? (
-            <Text style={s.hint}>{t('otp.resendIn', { seconds: countdown })}</Text>
-          ) : (
-            <AuthButton label={t('otp.resend')} variant="link" accent={P.accent} disabled={loading} onPress={() => requestOtp()} />
-          )}
-        </View>
-      </AuthShell>
+        <Reveal delay={120}>
+          <AuthCard>
+            <OtpCodeInput
+              value={otpCode}
+              onChange={(c) => { setOtpCode(c); if (otpWrong) setOtpWrong(false); }}
+              onComplete={verifyOtp}
+              accent={P.accent}
+              error={otpWrong}
+              disabled={loading}
+            />
+            <View style={{ height: 18 }} />
+            <AuthButton
+              label={t('otp.validate')}
+              accent={P.action}
+              loading={loading}
+              disabled={otpCode.length < 6}
+              onPress={() => verifyOtp(otpCode)}
+            />
+            <View style={s.centerRow}>
+              {countdown > 0 ? (
+                <Text style={s.hint}>{t('otp.resendIn', { seconds: countdown })}</Text>
+              ) : (
+                <AuthButton label={t('otp.resend')} variant="link" accent={P.accent} disabled={loading} onPress={() => requestOtp()} />
+              )}
+            </View>
+          </AuthCard>
+        </Reveal>
+      </SimpleAuthShell>
     );
   }
 
   // ── Étape : demande d'un code par email ───────────────
   if (view === 'OTP_REQUEST') {
     return (
-      <AuthShell
-        compact
+      <SimpleAuthShell
         title={t('otp.byCodeTitle')}
         subtitle={t('otp.byCodeSubtitle')}
         onBack={() => switchView('PASSWORD')}
         headerRight={pill}
         below={legalFooter}
+        spread={false}
       >
         {notice ? <AuthNotice {...notice} /> : null}
-        <AuthField
-          label={t('login.email.label')}
-          icon="mail-outline"
-          value={otpEmail}
-          onChangeText={(t) => { setOtpEmail(t); if (emailErr) setEmailErr(null); }}
-          error={emailErr}
-          keyboardType="email-address"
-          autoComplete="email"
-          textContentType="emailAddress"
-          returnKeyType="send"
-          onSubmitEditing={() => requestOtp()}
-          accent={P.accent}
-          autoFocus
-        />
-        <AuthButton
-          label={t('otp.sendCode')}
-          icon="paper-plane-outline"
-          iconRight
-          accent={P.action}
-          loading={loading}
-          disabled={otpEmail.trim().length === 0}
-          onPress={() => requestOtp()}
-        />
-      </AuthShell>
+        <Reveal delay={120}>
+          <AuthCard>
+            <AuthField
+              label={t('login.email.label')}
+              icon="mail-outline"
+              value={otpEmail}
+              onChangeText={(t) => { setOtpEmail(t); if (emailErr) setEmailErr(null); }}
+              error={emailErr}
+              keyboardType="email-address"
+              autoComplete="email"
+              textContentType="emailAddress"
+              returnKeyType="send"
+              onSubmitEditing={() => requestOtp()}
+              accent={P.accent}
+              autoFocus
+            />
+            <AuthButton
+              label={t('otp.sendCode')}
+              icon="paper-plane-outline"
+              iconRight
+              accent={P.action}
+              loading={loading}
+              disabled={otpEmail.trim().length === 0}
+              onPress={() => requestOtp()}
+            />
+          </AuthCard>
+        </Reveal>
+      </SimpleAuthShell>
     );
   }
 
-  // ── Écran principal : téléphone + code secret (défaut) — email + mot de passe en option ──
+  // ── Écran principal : téléphone en 2 étapes (défaut) — email + mot de passe en option ──
   const switchMethod = (next: Method) => {
     setNotice(null);
     setEmailErr(null);
     setPhoneErr(null);
     setPin('');
     setPassword('');
+    setDir(1);
+    setStep(1);
     setMethod(next);
   };
 
+  // Étape 1 → 2 : on vérifie seulement la forme du numéro (le serveur n'est PAS interrogé ici).
+  const handleContinue = () => {
+    const problem = validatePhone(phone);
+    if (problem) { setPhoneErr(problem); return; }
+    setPhoneErr(null);
+    setNotice(null);
+    setPin('');
+    Keyboard.dismiss();
+    setDir(1);
+    setStep(2);
+  };
+
+  const k = `${method}-${step}`;               // change à chaque étape : relance l'animation d'entrée des blocs
+  const fx = dir * 26;                          // glissement horizontal : vient de la droite (suivant) ou de la gauche (retour)
+  const phoneRecapText = `${country.dial} ${phone}`.trim();
+
+  // Autres façons de se connecter (visibles d'emblée sous le formulaire)
+  const altItems: OptionItem[] = [
+    method === 'PHONE'
+      ? { key: 'email', icon: 'mail-outline', title: t('modal.options.useEmail'), sub: t('login.opt.emailSub'), onPress: () => switchMethod('EMAIL'), disabled: loading, testID: 'login-switch-method' }
+      : { key: 'phone', icon: 'call-outline', title: t('modal.options.usePhone'), sub: t('login.opt.phoneSub'), onPress: () => switchMethod('PHONE'), disabled: loading, testID: 'login-switch-method' },
+    { key: 'code', icon: 'mail-open-outline', title: t('modal.options.emailCode'), sub: t('login.opt.codeSub'), onPress: () => switchView('OTP_REQUEST'), disabled: loading, testID: 'login-email-code' },
+  ];
+
+  const bioButton = bioReady ? (
+    <AuthButton dense variant="outline" icon="finger-print-outline" iconOnly label={bioLabel} onPress={() => void handleBiometric()} disabled={loading} testID="login-biometric" />
+  ) : null;
+
+  const forgotLink = (
+    <TouchableOpacity onPress={() => setForgotOpen(true)} disabled={loading} accessibilityRole="button" accessibilityLabel={t('login.forgot')} hitSlop={{ top: 8, bottom: 8, left: 6, right: 6 }} style={s.miniLink} testID="login-forgot">
+      <Text style={[s.forgotTxt, { color: P.accent }]} numberOfLines={1}>{t('login.forgot')}</Text>
+    </TouchableOpacity>
+  );
+
+  const title = stepTwo ? t('login.pin.label') : t('login.submit');
+  const subtitle = stepTwo ? t('login.pin.subtitle') : t('login.welcome', { name: branding.name });
+
   return (
     <SimpleAuthShell
-      title={t('login.submit')}
-      onBack={() => (router.canGoBack() ? router.back() : router.replace('/'))}
+      title={title}
+      subtitle={subtitle}
+      step={method === 'PHONE' ? step : undefined}
+      onBack={onBackPress}
       headerRight={pill}
-      below={signupBelow}
+      below={stepTwo ? legalFooter : signupBelow}
     >
-      {notice ? <AuthNotice {...notice} /> : null}
+      {!booted ? null : (
+        <>
+          {notice ? <AuthNotice {...notice} /> : null}
 
-      {method === 'PHONE' ? (
-        <>
-          <Reveal delay={160}>
-            <PhoneField
-              country={country}
-              onCountryChange={setCountry}
-              value={phone}
-              onChangeText={(t) => { setPhone(t); if (phoneErr) setPhoneErr(null); }}
-              error={phoneErr}
-              accent={P.accent}
-              dense
-            />
-          </Reveal>
-          <Reveal delay={230}>
-            <PinInput
-              dense
-              label={t('login.pin.label')}
-              value={pin}
-              onChange={setPin}
-              onComplete={(code) => { if (validatePhone(phone) === null) void handleLogin(false, code); else setPhoneErr(validatePhone(phone)); }}
-              accent={P.accent}
-              disabled={loading}
-              testID="login-pin"
-            />
-          </Reveal>
-        </>
-      ) : (
-        <>
-          <Reveal delay={160}>
-            <AuthField
-              label={t('login.email.label')}
-              icon="mail-outline"
-              value={email}
-              onChangeText={(t) => { setEmail(t); if (emailErr) setEmailErr(null); }}
-              error={emailErr}
-              keyboardType="email-address"
-              autoComplete="email"
-              textContentType="emailAddress"
-              returnKeyType="next"
-              onSubmitEditing={() => passRef.current?.focus()}
-              accent={P.accent}
-              dense
-              testID="login-email"
-            />
-          </Reveal>
-          <Reveal delay={230}>
-            <AuthField
-              label={t('login.password.label')}
-              icon="lock-closed-outline"
-              value={password}
-              onChangeText={setPassword}
-              secure
-              autoComplete="current-password"
-              textContentType="password"
-              returnKeyType="go"
-              onSubmitEditing={canSubmit ? () => handleLogin() : undefined}
-              inputRef={passRef}
-              accent={P.accent}
-              dense
-              maxLength={128}
-              testID="login-password"
-            />
-          </Reveal>
+          {method === 'PHONE' && step === 1 ? (
+            <>
+              {/* ÉTAPE 1 : numéro de téléphone + « Continuer » */}
+              <Reveal key={`${k}-form`} delay={80} fromX={fx}>
+                <AuthCard>
+                  <PhoneField
+                    country={country}
+                    onCountryChange={setCountry}
+                    value={phone}
+                    onChangeText={(v) => { setPhone(v); if (phoneErr) setPhoneErr(null); }}
+                    error={phoneErr}
+                    accent={P.accent}
+                    onSubmitEditing={handleContinue}
+                    dense={false}
+                  />
+                  <AuthButton
+                    label={t('login.continue')}
+                    accent={P.action}
+                    loading={loading}
+                    disabled={normalizeNationalNumber(phone) === ''}
+                    onPress={handleContinue}
+                    testID="login-continue"
+                  />
+                </AuthCard>
+              </Reveal>
+
+              <Reveal key={`${k}-alts`} delay={160} fromX={fx}>
+                <View>
+                  <View style={s.orRow}>
+                    <View style={s.orLine} />
+                    <Text style={s.orTxt} numberOfLines={1}>{t('login.orContinueWith')}</Text>
+                    <View style={s.orLine} />
+                  </View>
+                  <OptionList items={altItems} />
+                </View>
+              </Reveal>
+            </>
+          ) : null}
+
+          {method === 'PHONE' && step === 2 ? (
+            <>
+              {/* ÉTAPE 2 : rappel du numéro + code secret */}
+              <Reveal key={`${k}-recap`} delay={60} fromX={fx}>
+                <PhoneRecap flag={country.flag} text={phoneRecapText} actionLabel={t('login.edit')} onPress={backToPhone} disabled={loading} testID="login-edit-phone" />
+              </Reveal>
+
+              <Reveal key={`${k}-form`} delay={130} fromX={fx}>
+                <AuthCard>
+                  <PinInput
+                    dense={false}
+                    autoFocus
+                    label={t('login.pin.label')}
+                    value={pin}
+                    onChange={setPin}
+                    onComplete={(code) => { if (validatePhone(phone) === null) void handleLogin(false, code); else { setPhoneErr(validatePhone(phone)); backToPhone(); } }}
+                    accent={P.accent}
+                    disabled={loading}
+                    testID="login-pin"
+                  />
+                  <View style={s.forgotRow}>{forgotLink}</View>
+                  <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
+                    <View style={{ flex: 1, minWidth: 0 }}>
+                      <AuthButton label={t('login.title')} accent={P.action} dense loading={loading} disabled={!canSubmit} onPress={() => handleLogin()} testID="login-submit" />
+                    </View>
+                    {bioButton}
+                  </View>
+                </AuthCard>
+              </Reveal>
+
+              <Reveal key={`${k}-other`} delay={200} fromX={fx}>
+                <View style={{ alignItems: 'center' }}>
+                  <TouchableOpacity onPress={backToPhone} disabled={loading} accessibilityRole="button" accessibilityLabel={t('login.otherWay')} hitSlop={{ top: 8, bottom: 8, left: 12, right: 12 }} style={s.miniLink} testID="login-other-way">
+                    <Text style={[s.otherWayTxt, { color: P.accent }]} numberOfLines={1}>{t('login.otherWay')}</Text>
+                  </TouchableOpacity>
+                </View>
+              </Reveal>
+            </>
+          ) : null}
+
+          {method === 'EMAIL' ? (
+            <>
+              {/* EMAIL + MOT DE PASSE (option) : une seule étape */}
+              <Reveal key={`${k}-form`} delay={80} fromX={fx}>
+                <AuthCard>
+                  <AuthField
+                    label={t('login.email.label')}
+                    icon="mail-outline"
+                    value={email}
+                    onChangeText={(v) => { setEmail(v); if (emailErr) setEmailErr(null); }}
+                    error={emailErr}
+                    keyboardType="email-address"
+                    autoComplete="email"
+                    textContentType="emailAddress"
+                    returnKeyType="next"
+                    onSubmitEditing={() => passRef.current?.focus()}
+                    accent={P.accent}
+                    dense
+                    testID="login-email"
+                  />
+                  <AuthField
+                    label={t('login.password.label')}
+                    icon="lock-closed-outline"
+                    value={password}
+                    onChangeText={setPassword}
+                    secure
+                    autoComplete="current-password"
+                    textContentType="password"
+                    returnKeyType="go"
+                    onSubmitEditing={canSubmit ? () => handleLogin() : undefined}
+                    inputRef={passRef}
+                    accent={P.accent}
+                    dense
+                    maxLength={128}
+                    testID="login-password"
+                  />
+                  <View style={s.forgotRow}>{forgotLink}</View>
+                  <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
+                    <View style={{ flex: 1, minWidth: 0 }}>
+                      <AuthButton label={t('login.title')} accent={P.action} dense loading={loading} disabled={!canSubmit} onPress={() => handleLogin()} testID="login-submit" />
+                    </View>
+                    {bioButton}
+                  </View>
+                </AuthCard>
+              </Reveal>
+
+              <Reveal key={`${k}-alts`} delay={160} fromX={fx}>
+                <View>
+                  <View style={s.orRow}>
+                    <View style={s.orLine} />
+                    <Text style={s.orTxt} numberOfLines={1}>{t('login.orContinueWith')}</Text>
+                    <View style={s.orLine} />
+                  </View>
+                  <OptionList items={altItems} />
+                </View>
+              </Reveal>
+            </>
+          ) : null}
         </>
       )}
-
-      {/* « Code oublié ? » : seul lien sous le code (les autres façons de se connecter sont des boutons, plus bas). */}
-      <Reveal delay={290}>
-        <View style={s.forgotRow}>
-          <TouchableOpacity onPress={() => setForgotOpen(true)} disabled={loading} accessibilityRole="button" accessibilityLabel={t('login.forgot')} hitSlop={{ top: 8, bottom: 8, left: 6, right: 6 }} style={s.miniLink} testID="login-forgot">
-            <Text style={[s.forgotTxt, { color: P.accent }]} numberOfLines={1}>{t('login.forgot')}</Text>
-          </TouchableOpacity>
-        </View>
-      </Reveal>
-
-      <Reveal delay={340}>
-        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
-          <View style={{ flex: 1, minWidth: 0 }}>
-            <AuthButton
-              label={t('login.title')}
-              accent={P.action}
-              dense
-              loading={loading}
-              disabled={!canSubmit}
-              onPress={() => handleLogin()}
-              testID="login-submit"
-            />
-          </View>
-          {bioReady ? (
-            <AuthButton dense variant="outline" icon="finger-print-outline" iconOnly label={bioLabel} onPress={() => void handleBiometric()} disabled={loading} testID="login-biometric" />
-          ) : null}
-        </View>
-      </Reveal>
-
-      <Reveal delay={400}>
-        <View style={s.orRow}>
-          <View style={s.orLine} />
-          <Text style={s.orTxt} numberOfLines={1}>{t('login.orWith')}</Text>
-          <View style={s.orLine} />
-        </View>
-      </Reveal>
-
-      {/* Les autres façons de se connecter, visibles d'emblée (avant : cachées dans une fenêtre « Autres options »). */}
-      <Reveal delay={450}>
-        <View style={{ flexDirection: 'row', gap: 10 }}>
-          <View style={{ flex: 1, minWidth: 0 }}>
-            <AuthButton
-              variant="outline"
-              stacked
-              dense
-              icon={method === 'PHONE' ? 'mail-outline' : 'call-outline'}
-              label={method === 'PHONE' ? t('modal.options.useEmail') : t('modal.options.usePhone')}
-              onPress={() => switchMethod(method === 'PHONE' ? 'EMAIL' : 'PHONE')}
-              disabled={loading}
-              testID="login-switch-method"
-            />
-          </View>
-          <View style={{ flex: 1, minWidth: 0 }}>
-            <AuthButton dense variant="outline" stacked icon="mail-open-outline" label={t('modal.options.emailCode')} onPress={() => switchView('OTP_REQUEST')} disabled={loading} testID="login-email-code" />
-          </View>
-        </View>
-      </Reveal>
 
       <ForgotCodeModal
         visible={forgotOpen}
@@ -727,12 +833,13 @@ export default function LoginV2Screen() {
 }
 
 const s = themed(() => StyleSheet.create({
-  forgotRow: { flexDirection: 'row', justifyContent: 'flex-start', alignItems: 'center', gap: 8, marginTop: 0, marginBottom: 8 },
+  forgotRow: { flexDirection: 'row', justifyContent: 'flex-start', alignItems: 'center', gap: 8, marginTop: 0, marginBottom: 10 },
   forgotTxt: { fontFamily: FONT.body, fontSize: 13, fontWeight: '700' },
-  orRow:     { flexDirection: 'row', alignItems: 'center', gap: 12, marginTop: 12, marginBottom: 10 },
+  orRow:     { flexDirection: 'row', alignItems: 'center', gap: 12, marginTop: 0, marginBottom: 12 },
   orLine:    { flex: 1, height: 1, backgroundColor: N.border },
   orTxt:     { fontFamily: FONT.body, fontSize: 11, fontWeight: '700', color: N.muted, letterSpacing: 0.4 },
   miniLink:  { paddingVertical: 4 },
+  otherWayTxt: { fontFamily: FONT.body, fontSize: 14, fontWeight: '800' },
   miniTxt:   { fontFamily: FONT.body, fontSize: 12, fontWeight: '700', color: N.inkSub },
   centerRow: { alignItems: 'center', marginTop: 14 },
   hint:      { fontFamily: FONT.body, fontSize: 13.5, color: N.muted, paddingVertical: 12 },

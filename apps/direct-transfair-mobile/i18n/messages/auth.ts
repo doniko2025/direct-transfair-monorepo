@@ -43,6 +43,17 @@ export const auth = {
   'login.bio.android':      { fr: 'Empreinte digitale', en: 'Fingerprint', pt: 'Impressão digital' },
   'login.bio.ios':          { fr: 'Face ID / Touch ID', en: 'Face ID / Touch ID', pt: 'Face ID / Touch ID' },
   'login.orWith':           { fr: 'OU CONNECTEZ-VOUS AVEC', en: 'OR SIGN IN WITH', pt: 'OU INICIE SESSÃO COM' },
+  // ── Connexion en 2 étapes (v6.0) ──
+  'login.welcome':          { fr: 'Ravi de vous revoir sur {name}', en: 'Good to see you again on {name}', pt: 'Bom tê-lo de volta ao {name}' },
+  'login.continue':         { fr: 'Continuer', en: 'Continue', pt: 'Continuar' },
+  'login.orContinueWith':   { fr: 'OU CONTINUEZ AVEC', en: 'OR CONTINUE WITH', pt: 'OU CONTINUE COM' },
+  'login.pin.subtitle':     { fr: 'Entrez votre code à 6 chiffres', en: 'Enter your 6-digit code', pt: 'Introduza o seu código de 6 dígitos' },
+  'login.edit':             { fr: 'Modifier', en: 'Edit', pt: 'Alterar' },
+  'login.otherWay':         { fr: 'Se connecter autrement', en: 'Sign in another way', pt: 'Entrar de outra forma' },
+  'login.step':             { fr: 'Étape {n} sur {total}', en: 'Step {n} of {total}', pt: 'Passo {n} de {total}' },
+  'login.opt.emailSub':     { fr: 'Utiliser votre adresse email', en: 'Use your email address', pt: 'Usar o seu endereço de email' },
+  'login.opt.phoneSub':     { fr: 'Utiliser votre numéro et votre code secret', en: 'Use your number and secret code', pt: 'Usar o seu número e código secreto' },
+  'login.opt.codeSub':      { fr: 'Recevoir un code à usage unique', en: 'Get a one-time code', pt: 'Receber um código de utilização única' },
 
   // ── Connexion par code reçu par email ──
   'otp.enterCode':          { fr: 'Saisissez le code', en: 'Enter the code', pt: 'Introduza o código' },

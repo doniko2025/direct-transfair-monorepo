@@ -167,6 +167,10 @@ export const home = {
   'land.feesAmount':    { fr: 'frais {amount}', en: 'fees {amount}', pt: 'taxas {amount}' },
   'land.feesNote':      { fr: 'Frais estimés, confirmés avant l’envoi.', en: 'Estimated fees, confirmed before you send.', pt: 'Taxas estimadas, confirmadas antes do envio.' },
   'land.signUp':        { fr: "S'inscrire", en: 'Sign up', pt: 'Registar' },
+  // Les 3 étapes (accueil v6.4)
+  'land.step1':         { fr: 'Créez votre compte', en: 'Create your account', pt: 'Crie a sua conta' },
+  'land.step2':         { fr: 'Ajoutez un bénéficiaire', en: 'Add a recipient', pt: 'Adicione um beneficiário' },
+  'land.step3':         { fr: 'Envoyez en quelques secondes', en: 'Send in seconds', pt: 'Envie em segundos' },
   'nf.error':           { fr: 'Erreur 404', en: 'Error 404', pt: 'Erro 404' },
   'nf.title':           { fr: 'Page introuvable', en: 'Page not found', pt: 'Página não encontrada' },
   'nf.text':            { fr: "La page que vous cherchez n'existe pas ou a été déplacée.", en: 'The page you are looking for does not exist or has been moved.', pt: 'A página que procura não existe ou foi movida.' },

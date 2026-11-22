@@ -1,7 +1,8 @@
 // apps/direct-transfair-mobile/components/auth/PhoneField.tsx
 // ✅ Design « Corridor » : polices Manrope/Fraunces (composant Text) et icônes Lucide (composant Icon) — imports uniquement, logique inchangée.
 // =========================================================
-// TÉLÉPHONE v2.1 — Direct Transf'air
+// TÉLÉPHONE v2.2 — Direct Transf'air
+// ✅ v2.2 : `minWidth: 0` sur le champ de saisie — sur le web il débordait de la carte (largeur intrinsèque d'un <input>). Aucun effet sur mobile.
 // ✅ v2.1 : ESPACES AUTOMATIQUES selon le pays (Guinée 622 53 42 17, Sénégal 77 509 99 91, France 07 66 73 62 27…) — voir
 //    utils/phone.ts. Le « 0 » national est toléré en France (et pays voisins de règle) : normalizeNationalNumber() le retire
 //    toujours avant l'envoi, les espaces aussi.
@@ -130,7 +131,7 @@ const s = themed(() => StyleSheet.create({
   },
   flag:  { fontSize: 20 },
   code:  { fontFamily: FONT.body, fontSize: 15, fontWeight: '700', color: N.ink },
-  input: { flex: 1, fontFamily: FONT.body, fontSize: 16, fontWeight: '600', color: N.ink, paddingVertical: 12 },
+  input: { flex: 1, minWidth: 0, fontFamily: FONT.body, fontSize: 16, fontWeight: '600', color: N.ink, paddingVertical: 12 },
   msgRow: { flexDirection: 'row', alignItems: 'center', gap: 5, marginTop: 6 },
   msg:    { fontFamily: FONT.body, fontSize: 12.5, lineHeight: 17, flexShrink: 1 },
 }));
