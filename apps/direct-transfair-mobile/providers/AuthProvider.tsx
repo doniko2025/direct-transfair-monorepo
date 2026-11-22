@@ -1,7 +1,8 @@
 // apps/direct-transfair-mobile/providers/AuthProvider.tsx
 // =========================================================
 // ✅ phase 7 : le code de la société système est lu dans services/platformConfig.ts (plus de « DONIKO » en dur).
-// AUTH PROVIDER v7.4 — Direct Transf'air
+// AUTH PROVIDER v7.5 — Direct Transf'air
+// ✅ v7.5 : la déconnexion vide aussi la pile de navigation (dismissAll) avant de revenir sur la page d'accueil : plus de retour possible vers les écrans du compte.
 // ✅ v7.4 : la déconnexion ramène sur la page d'accueil (/) et non plus sur l'écran de connexion.
 // ✅ v7.3 : mot de passe temporaire. Si le profil porte `mustChangePassword`, la navigation est bloquée sur
 //   /(auth)/change-password-required jusqu'au changement (le serveur refuse de toute façon le reste de l'API).
@@ -258,6 +259,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       // permettre la reconnexion biométrique après logout.
       // ✅ v7.4 : après une déconnexion (volontaire, inactivité ou session expirée) on revient sur la PAGE D'ACCUEIL (simulateur de taux +
       //    « Se connecter » / « S'inscrire »), pas directement sur la connexion.
+      //    v7.5 : on vide d'abord la pile (onglets, profil…) pour que « retour » ne ramène jamais dans le compte fermé.
+      try { if (router.canDismiss()) router.dismissAll(); } catch { /* pile déjà vide */ }
       router.replace("/");
     } catch (e) {
       console.error("Erreur logout", e);

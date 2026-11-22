@@ -1,7 +1,8 @@
 // apps/direct-transfair-mobile/app/(tabs)/profile/account.tsx
 // ✅ Design « Corridor » : polices Manrope/Fraunces (composant Text) et icônes Lucide (composant Icon) — imports uniquement, logique inchangée.
 // =========================================================
-// ACCOUNT MENU v6.0 — Direct Transf'air
+// ACCOUNT MENU v6.1 — Direct Transf'air
+// ✅ v6.1 : après la déconnexion on arrive sur la page d'accueil (logout() de AuthProvider s'en charge), plus sur l'écran de connexion.
 // ✅ v6.0 : REFONTE THÈME CLAIR — fond crème, grande carte d'identité (avatar beige, pastille
 //    d'ID), menu en groupe blanc arrondi à lignes séparées par un filet, déconnexion en
 //    bouton « danger » doux. Les teintes par rôle (ambre / vert écrits en dur) disparaissent :
@@ -39,9 +40,7 @@ export default function AccountMenuScreen() {
         text: t("accm.yes"),
         style: "destructive",
         onPress: async () => {
-          await logout();
-          if (router.canDismiss()) router.dismissAll();
-          router.replace("/(auth)/login");
+          await logout(); // → page d'accueil (pile vidée par AuthProvider)
         },
       },
     ]);

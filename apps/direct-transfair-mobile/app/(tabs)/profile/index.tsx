@@ -1,5 +1,6 @@
 // apps/direct-transfair-mobile/app/(tabs)/profile/index.tsx
 // =========================================================
+// PROFILE INDEX v8.3 — la déconnexion (client OU marchand) ramène sur la page d'accueil (gérée par logout() de AuthProvider), plus sur l'écran de connexion.
 // PROFILE INDEX v8.2 — SÉPARATION RENFORCÉE : en compte marchand, l'identité affichée est celle du COMMERCE (nom, catégorie, statut) et le menu ne garde
 //    que ce qui sert au commerce (pas de plafonds d'envoi, moyens de paiement, points de dépôt, QR personnel, bénéficiaires) ; en compte client,
 //    aucune information du commerce n'apparaît.
@@ -126,9 +127,7 @@ export default function ProfileScreen() {
         {
           text: t("prof.logoutConfirm"), style: "destructive",
           onPress: async () => {
-            await logout();
-            if (router.canDismiss()) router.dismissAll();
-            router.replace("/(auth)/login");
+            await logout(); // → page d'accueil (pile vidée par AuthProvider)
           },
         },
       ],

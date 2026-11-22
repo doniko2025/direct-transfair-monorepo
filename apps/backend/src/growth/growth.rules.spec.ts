@@ -1,5 +1,5 @@
 import {
-  addDays, applyLockMargin, judgeLock, lockMarginPct, lockMinutes, normalizeReferralCode, parseReferralSettings, parseRequestAmount, paidInRequestCurrency, paymentSettlesRequest,
+  addDays, applyLockMargin, fitDesiredReceived, lockRateFactor, judgeLock, lockMarginPct, lockMinutes, normalizeReferralCode, parseReferralSettings, parseRequestAmount, paidInRequestCurrency, paymentSettlesRequest,
   requestDays, rewardExpiry, startOfMonthUtc, DEFAULT_REFERRAL,
 } from './growth.rules';
 
@@ -116,5 +116,30 @@ describe('marge du taux garanti (audit argent M2)', () => {
     expect(applyLockMargin(1000, 0.2)).toBeCloseTo(998, 6);
     expect(applyLockMargin(1000, 0)).toBe(1000);
     expect(applyLockMargin(1000, -1)).toBe(1000);
+  });
+});
+
+describe('montant à recevoir saisi par le client', () => {
+  it('facteur du taux garanti : 0,998 pour 0,2 %', () => {
+    expect(lockRateFactor(0.2)).toBeCloseTo(0.998, 9);
+    expect(lockRateFactor(0)).toBe(1);
+  });
+  it('cas réel : 50 000 GNF saisis → 4,78 € envoyés → crédit EXACT de 50 000 (et plus 49 985)', () => {
+    const rate = 10500 * lockRateFactor(0.2);                  // 10 479
+    const send = Math.ceil(50000 / rate * 100 - 1e-9) / 100;   // 4,78
+    expect(send).toBe(4.78);
+    const received = Math.round(send * rate);                  // 50 090 : un peu plus que demandé (le centime d'euro vaut ~105 GNF)
+    expect(received).toBe(50090);
+    expect(fitDesiredReceived(received, 50000, rate, 0.01)).toBe(50000);
+  });
+  it('ne crédite jamais plus que le calcul, ignore une saisie incohérente', () => {
+    expect(fitDesiredReceived(50090, 60000, 10479, 0.01)).toBe(50090);   // plus que le calcul
+    expect(fitDesiredReceived(50090, 40000, 10479, 0.01)).toBe(50090);   // trop loin du calcul (> un centime d'envoi)
+    expect(fitDesiredReceived(50090, undefined, 10479, 0.01)).toBe(50090);
+    expect(fitDesiredReceived(50090, 0, 10479, 0.01)).toBe(50090);
+    expect(fitDesiredReceived(50090, -5, 10479, 0.01)).toBe(50090);
+  });
+  it('envoi en devise sans décimales (GNF → EUR) : unité = 1', () => {
+    expect(fitDesiredReceived(10, 9.99, 0.000095, 1)).toBe(9.99);
   });
 });

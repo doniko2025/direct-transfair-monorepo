@@ -12,7 +12,7 @@ import { CurrencyCode, Prisma } from '@prisma/client';
 
 import type { AuthUserPayload } from '../auth/types/auth-user-payload.type';
 import { normalizePhoneE164 } from '../common/utils/phone.util';
-import { roundToCurrency } from '../fee-schedule/fee-engine';
+import { ZERO_DECIMAL_CURRENCIES, roundToCurrency } from '../fee-schedule/fee-engine';
 import { MailService } from '../mail/mail.service';
 import { PushService } from '../push/push.service';
 import { SmsService } from '../sms/sms.service';
@@ -21,7 +21,7 @@ import { PrismaService } from '../prisma/prisma.service';
 import { RatesService } from '../rates/rates.service';
 import { loadReferralSettings, referralReferenceCurrency } from './growth.core';
 import {
-  MAX_OPEN_LOCKS, MAX_OPEN_REQUESTS, REFERRAL_KIND, addDays, addMinutes, applyLockMargin, lockMarginPct, lockMinutes, parseReferralSettings, parseRequestAmount,
+  MAX_OPEN_LOCKS, MAX_OPEN_REQUESTS, REFERRAL_KIND, addDays, addMinutes, applyLockMargin, fitDesiredReceived, lockMarginPct, lockMinutes, lockRateFactor, parseReferralSettings, parseRequestAmount,
   paidInRequestCurrency, requestDays, startOfMonthUtc,
 } from './growth.rules';
 import type { CreateMoneyRequestDto, QuoteRateLockDto, UpdateReferralConfigDto } from './dto/growth.dto';
@@ -114,15 +114,32 @@ export class GrowthService {
 
   // ── Taux garanti ────────────────────────────────────────
 
+  /** Réglage public de la garantie : facteur appliqué au taux (voir lockRateFactor) — sert au calcul « montant à recevoir » côté application. */
+  rateLockConfig() {
+    return { rateFactor: lockRateFactor(lockMarginPct()) };
+  }
+
   async quoteRate(user: AuthUserPayload, dto: QuoteRateLockDto) {
     const clientId = this.companyOf(user);
     const currency = this.currencyOf(dto.currency);
     const targetCurrency = this.currencyOf(dto.targetCurrency);
     const now = new Date();
 
-    // Même demande déjà garantie et encore valable plus d'une minute : on la renvoie (évite d'empiler des garanties).
+    const market = currency === targetCurrency ? dto.amount : await this.rates.convert(dto.amount, currency, targetCurrency, clientId);
+    // audit argent (M2) : la marge s'applique seulement à une vraie conversion ; elle est incluse dans le montant et le taux garantis,
+    // donc le client voit (et obtient) exactement ce qui est affiché.
+    const raw = currency === targetCurrency ? market : applyLockMargin(market, lockMarginPct());
+    const computed = currency === targetCurrency ? dto.amount : roundToCurrency(raw, targetCurrency);
+    // v7.7 : le client a saisi le montant À RECEVOIR → on crédite exactement ce montant (l'envoi, arrondi au centime supérieur, le couvre toujours).
+    const senderUnit = ZERO_DECIMAL_CURRENCIES.includes(currency) ? 1 : 0.01;
+    const received = currency === targetCurrency
+      ? computed
+      : fitDesiredReceived(computed, dto.desiredReceivedAmount, raw / dto.amount, senderUnit);
+    if (!(received > 0)) throw new BadRequestException('Montant trop faible : le montant reçu serait nul après conversion.');
+
+    // Même demande (même montant envoyé ET même montant reçu) déjà garantie et encore valable plus d'une minute : on la renvoie.
     const same = await this.prisma.rateLock.findFirst({
-      where: { userId: user.id, currency, targetCurrency, amount: new Prisma.Decimal(dto.amount), consumedAt: null, expiresAt: { gt: addMinutes(now, 1) } },
+      where: { userId: user.id, currency, targetCurrency, amount: new Prisma.Decimal(dto.amount), receivedAmount: new Prisma.Decimal(received), consumedAt: null, expiresAt: { gt: addMinutes(now, 1) } },
       orderBy: { expiresAt: 'desc' },
     });
     if (same) return this.lockView(same, now);
@@ -130,17 +147,10 @@ export class GrowthService {
     const open = await this.prisma.rateLock.count({ where: { userId: user.id, consumedAt: null, expiresAt: { gt: now } } });
     if (open >= MAX_OPEN_LOCKS) throw new ConflictException('Trop de taux garantis en cours. Utilisez l’un d’eux ou patientez quelques minutes.');
 
-    const market = currency === targetCurrency ? dto.amount : await this.rates.convert(dto.amount, currency, targetCurrency, clientId);
-    // audit argent (M2) : la marge s'applique seulement à une vraie conversion ; elle est incluse dans le montant et le taux garantis,
-    // donc le client voit (et obtient) exactement ce qui est affiché.
-    const raw = currency === targetCurrency ? market : applyLockMargin(market, lockMarginPct());
-    const received = currency === targetCurrency ? dto.amount : roundToCurrency(raw, targetCurrency);
-    if (!(received > 0)) throw new BadRequestException('Montant trop faible : le montant reçu serait nul après conversion.');
-
     const lock = await this.prisma.rateLock.create({
       data: {
         clientId, userId: user.id, currency, targetCurrency, amount: new Prisma.Decimal(dto.amount),
-        rate: dto.amount > 0 ? raw / dto.amount : 1, receivedAmount: new Prisma.Decimal(received), expiresAt: addMinutes(now, lockMinutes()),
+        rate: dto.amount > 0 ? (received === computed ? raw / dto.amount : received / dto.amount) : 1, receivedAmount: new Prisma.Decimal(received), expiresAt: addMinutes(now, lockMinutes()),
       },
     });
     return this.lockView(lock, now);

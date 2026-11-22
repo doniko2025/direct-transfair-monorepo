@@ -38,6 +38,12 @@ function currentUser(req: AuthRequest): AuthUserPayload {
 export class GrowthController {
   constructor(private readonly growth: GrowthService) {}
 
+  @Get('rate-locks/config')
+  @Roles(Role.USER, Role.AGENT)
+  rateLockConfig() {
+    return this.growth.rateLockConfig();
+  }
+
   @Post('rate-locks')
   @HttpCode(HttpStatus.OK)
   @Roles(Role.USER, Role.AGENT)

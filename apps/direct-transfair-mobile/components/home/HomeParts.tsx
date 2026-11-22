@@ -20,7 +20,7 @@ import { DotGrid } from "../ui/Corridor";
 import { useRouter } from "expo-router";
 import { useAuth } from "../../providers/AuthProvider";
 import { useProfilePhoto } from "../../hooks/useProfilePhoto";
-import { countriesList } from "../../data/countries";
+import { CurrencyFlag, flagForCurrency } from "../ui/CurrencyFlag";
 import { formatMoney } from "../wallet/walletTheme";
 import { useUnreadNotifications } from "../../hooks/useUnreadNotifications";
 import { useT } from "../../providers/I18nProvider";
@@ -46,26 +46,8 @@ export function useBalanceHidden(): [boolean, () => void] {
 }
 
 // ─── Drapeau de la devise ────────────────────────────────
-/** Drapeau (emoji) du pays de la devise : celui du pays du client si sa devise correspond, sinon le pays « principal » de la devise. */
-export function flagForCurrency(currency: string, countryName?: string | null): string {
-  const own = countryName ? countriesList.find((c) => c.name.toLowerCase() === countryName.toLowerCase()) : undefined;
-  if (own && own.currency === currency) return own.flag;
-  const MAIN: Record<string, string> = { EUR: "FR", XOF: "SN", XAF: "CM", GNF: "GN", USD: "US", GBP: "GB" };
-  const code = MAIN[currency];
-  const byCode = code ? countriesList.find((c) => c.code === code) : undefined;
-  return (byCode ?? countriesList.find((c) => c.currency === currency))?.flag ?? "🌐";
-}
-
-export function CurrencyFlag({ currency, countryName, size = 28 }: { currency: string; countryName?: string | null; size?: number }) {
-  const { C } = useUI();
-  return (
-    <View style={{ width: size, height: size, borderRadius: size / 2, overflow: "hidden", alignItems: "center", justifyContent: "center", backgroundColor: C.field, borderWidth: 1, borderColor: C.line }}>
-      <Text allowFontScaling={false} style={{ fontSize: size * 0.92, lineHeight: size * 1.12, includeFontPadding: false, textAlign: "center" }}>
-        {flagForCurrency(currency, countryName)}
-      </Text>
-    </View>
-  );
-}
+// (déplacé dans components/ui/CurrencyFlag.tsx pour servir aussi aux champs de montant ; ré-exporté ici : les imports existants restent valides)
+export { CurrencyFlag, flagForCurrency };
 
 // ─── Barre du haut ───────────────────────────────────────
 /** `badge` : nombre (pastille avec le chiffre, « 99+ » au-delà) ou `true` (simple point). 0 / faux : rien. */

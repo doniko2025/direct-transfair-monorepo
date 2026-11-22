@@ -1,7 +1,8 @@
 // apps/direct-transfair-mobile/components/ui/Field.tsx
 // ✅ Design « Corridor » : polices Manrope/Fraunces (composant Text) et icônes Lucide (composant Icon) — imports uniquement, logique inchangée.
 // =========================================================
-// CHAMPS DE SAISIE v2.3 — Direct Transf'air (thème clair, white-label)
+// CHAMPS DE SAISIE v2.4 — Direct Transf'air (thème clair, white-label)
+// ✅ v2.4 : `AmountInput` affiche le DRAPEAU du pays de la devise à côté du code (comme la carte « Envoyer de l'argent » de l'accueil).
 // ✅ v2.3 : ESPACES AUTOMATIQUES. `Field` accepte `formatInput` (ex. formatNationalInput) : le texte affiché et mémorisé est
 //    toujours mis en forme au fil de la frappe. `PhoneInput` groupe le numéro selon le pays (622 53 42 17, 77 509 99 91,
 //    07 66 73 62 27…). `AmountInput` affiche les milliers séparés (1 000 000 000) sans changer la valeur brute rendue à
@@ -26,6 +27,7 @@ import {
 } from 'react-native';
 import { Ionicons } from './Icon';
 import { useUI, SYSTEM_FONT } from './theme';
+import { CurrencyFlag } from './CurrencyFlag';
 import CountryPickerSheet from '../auth/CountryPickerSheet';
 import type { AuthCountry } from '../auth/authCountries';
 
@@ -364,8 +366,9 @@ export function AmountInput({
           selectionColor={C.accent}
           accessibilityLabel={label ?? t('field.amount')}
         />
-        <Pressable disabled={!onCurrencyPress} onPress={onCurrencyPress} style={[{ flexDirection: 'row', alignItems: 'center', gap: 4 }, compact ? { backgroundColor: C.field, borderRadius: 999, paddingHorizontal: 12, height: 34 } : null]}>
-          <Text style={{ fontFamily: SYSTEM_FONT, fontSize: compact ? 15 : 20, fontWeight: '800', color: C.muted }}>{currency}</Text>
+        <Pressable disabled={!onCurrencyPress} onPress={onCurrencyPress} style={[{ flexDirection: 'row', alignItems: 'center', gap: compact ? 7 : 8 }, compact ? { backgroundColor: C.field, borderRadius: 999, paddingLeft: 6, paddingRight: 12, height: 38 } : null]}>
+          <CurrencyFlag currency={currency} size={compact ? 26 : 30} />
+          <Text style={{ fontFamily: SYSTEM_FONT, fontSize: compact ? 15 : 20, fontWeight: '800', color: compact ? C.ink : C.muted }}>{currency}</Text>
           {!!onCurrencyPress && <Ionicons name="chevron-down" size={16} color={C.muted} />}
         </Pressable>
       </View>

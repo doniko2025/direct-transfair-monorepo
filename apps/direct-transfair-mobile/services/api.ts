@@ -1686,8 +1686,13 @@ class API {
   }
 
   // ── Croissance (lot 16) : taux garanti, demandes d'argent, parrainage ─────────────────────────
+  /** Facteur appliqué au taux garanti (ex. 0,998) : sert au calcul de l'envoi quand le client saisit le montant À RECEVOIR. */
+  async getRateLockConfig(): Promise<{ rateFactor: number }> {
+    return (await this.http.get<{ rateFactor: number }>("/rate-locks/config")).data;
+  }
+
   /** Garantit le taux quelques minutes pour CE montant : à joindre à l'envoi (rateLockId). */
-  async quoteRateLock(input: { amount: number; currency: string; targetCurrency: string }): Promise<RateLock> {
+  async quoteRateLock(input: { amount: number; currency: string; targetCurrency: string; desiredReceivedAmount?: number }): Promise<RateLock> {
     return (await this.http.post<RateLock>("/rate-locks", input)).data;
   }
 

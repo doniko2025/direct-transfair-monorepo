@@ -40,6 +40,7 @@ import {
 } from "../components/ui";
 
 import { Text, TextInput } from '../components/ui/Text';
+import { CurrencyTag } from '../components/ui/CurrencyFlag';
 import { userCurrency } from "../utils/currency";
 // ─── Indicatifs pays ────────────────────────────────────
 const COUNTRY_CODES = [
@@ -421,7 +422,7 @@ export default function WalletTransferScreen() {
                   underlineColorAndroid="transparent"
                   accessibilityLabel={t("wt.amountA11y")}
                 />
-                <UText v="bodyStrong" tone="muted">{senderCurrency}</UText>
+                <CurrencyTag currency={senderCurrency} />
               </View>
             </View>
             <View style={{ paddingHorizontal: 16, paddingVertical: 12, backgroundColor: C.sunken }}>
@@ -435,7 +436,7 @@ export default function WalletTransferScreen() {
                 >
                   {converting ? "…" : convertedAmount !== null ? fmt(convertedAmount, targetCurrency) : numAmount > 0 ? "?" : "0"}
                 </Text>
-                <UText v="bodyStrong" tone="muted">{targetCurrency}</UText>
+                <CurrencyTag currency={targetCurrency} />
               </View>
               {convRate !== null && !isSameCurrency && numAmount > 0 && (
                 <UText v="caption" tone="muted" style={{ marginTop: 4 }}>

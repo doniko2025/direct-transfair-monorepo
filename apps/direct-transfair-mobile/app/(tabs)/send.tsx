@@ -1,6 +1,8 @@
 // apps/direct-transfair-mobile/app/(tabs)/send.tsx
 // =========================================================
-// SEND MONEY v7.4 — Direct Transf'air
+// SEND MONEY v7.5 — Direct Transf'air
+// ✅ v7.5 : MONTANT À RECEVOIR EXACT — quand le client saisit le montant dans « reçoit » (ex. 50 000 GNF), l'envoi est calculé avec le taux
+//   GARANTI (marge comprise, facteur lu sur le serveur) et le serveur crédite exactement le montant saisi (avant : 50 000 saisis → 49 985 reçus).
 // ✅ v7.4 : MÊME ÉCHELLE DE POLICES QUE L'ACCUEIL (en-tête 16/12, titre d'étape 20, libellés 11,5, montants 22, boutons 48 pt / 15) ;
 //   montants rapides (100 000 · 300 000 · 500 000) toujours sur UNE ligne ; ESPACES AUTOMATIQUES : montants (1 000 000 000) et
 //   numéro du destinataire selon le pays (Guinée 622 53 42 17, Sénégal 77 509 99 91, France 07 66 73 62 27 — le 0 est toléré).
@@ -480,6 +482,8 @@ export default function SendMoneyScreen() {
   const [targetCurrency,    setTargetCurrency]   = useState("XOF");
   const [targetCountryData, setTargetCountryData]= useState<CountryData>(getCountryData("Sénégal"));
   const [rate,              setRate]             = useState<number | null>(1);
+  // ✅ v7.7 — facteur du taux garanti (ex. 0,998 = marge de 0,2 %) : lu sur le serveur, 1 tant qu'on ne l'a pas.
+  const [rateFactor,        setRateFactor]       = useState(1);
   const [rawAmount,         setRawAmount]        = useState("");
   // ✅ v2.15 — saisie bidirectionnelle du montant : `amountSource` retient le champ que l'utilisateur est en train de
   // saisir. ✅ v5.3 — le champ INACTIF n'est plus synchronisé par des effets : il est CALCULÉ à l'affichage
@@ -627,13 +631,16 @@ export default function SendMoneyScreen() {
     const id = ++initSeq.current;
     setLoadState((prev) => (prev === "ready" ? prev : "loading"));
     const ms = defaultTimeoutMs();
-    const [r, b, tx] = await Promise.allSettled([
+    const [r, b, tx, cfg] = await Promise.allSettled([
       withTimeout(api.getExchangeRates(), ms),
       withTimeout(api.getBeneficiaries(), ms),
       withTimeout(api.getTransactions({ limit: 100, space: "client" }), ms),
+      withTimeout(api.getRateLockConfig(), ms),
     ]);
     if (id !== initSeq.current) return;
     if (r.status === "fulfilled") setAllRates(r.value);
+    // v7.7 — facteur du taux garanti (0,998…) ; absent / invalide / ancien serveur : 1 (comportement d'avant).
+    if (cfg.status === "fulfilled") { const f = Number(cfg.value?.rateFactor); if (Number.isFinite(f) && f >= 0.9 && f <= 1) setRateFactor(f); }
     if (b.status === "fulfilled") setBeneficiaries(b.value);
     // « Envoyer à nouveau » est un bonus : si l'historique ne répond pas, on n'affiche simplement pas la rangée (aucune erreur).
     if (tx.status === "fulfilled") setRecentTx(tx.value);
@@ -846,7 +853,8 @@ export default function SendMoneyScreen() {
 
   // ✅ v5.3 — montants (voir utils/amount.ts) :
   //   SEND     → vous envoyez = ce qui est tapé ; reçu = envoi × taux, arrondi comme le serveur (XOF/GNF entiers, sinon 2 décimales) ;
-  //   RECEIVED → reçu = ce qui est tapé ; envoi = reçu ÷ taux, arrondi au centime SUPÉRIEUR (le bénéficiaire reçoit au moins ce montant).
+  //   RECEIVED → reçu = ce qui est tapé ; envoi = reçu ÷ (taux × facteur du taux garanti), arrondi au centime SUPÉRIEUR : le bénéficiaire reçoit
+  //              au moins ce montant, marge de garantie comprise (v7.7 — avant : 50 000 saisis → 49 985 reçus, la marge de 0,2 % n'étant pas comptée).
   //   `sendAmount` reste le SEUL point d'entrée vers le reste de l'écran (frais, total, solde, création de transaction).
   const parsedSendRaw     = parseAmount(rawAmount);
   const parsedReceivedRaw = parseAmount(rawReceivedAmount);
@@ -854,10 +862,12 @@ export default function SendMoneyScreen() {
   // Aucun taux publié pour ce couple de devises : pas d'estimation, envoi bloqué (jamais de taux inventé).
   const rateMissing = rate === null && targetCurrency !== userCurrency;
 
+  // Taux réellement appliqué par la garantie (le serveur retient la marge sur toute vraie conversion, jamais sur une même devise).
+  const guaranteeRate = rate !== null && targetCurrency !== userCurrency ? rate * rateFactor : rate;
   const sendAmount = amountSource === "RECEIVED"
-    ? (rate !== null && rate > 0 ? ceilTo(parsedReceivedRaw / rate, dS) : 0)
+    ? (guaranteeRate !== null && guaranteeRate > 0 ? ceilTo(parsedReceivedRaw / guaranteeRate, dS) : 0)
     : roundTo(parsedSendRaw, dS);
-  const receivedAmt = rate !== null ? roundTo(sendAmount * rate, dR) : 0;
+  const receivedAmt = rate !== null ? roundTo(sendAmount * (amountSource === "RECEIVED" && guaranteeRate !== null ? guaranteeRate : rate), dR) : 0;
 
   const sendText     = amountSource === "SEND"     ? rawAmount         : toInputText(sendAmount, dS);
   const receivedText = amountSource === "RECEIVED" ? rawReceivedAmount : toInputText(receivedAmt, dR);
@@ -922,6 +932,7 @@ export default function SendMoneyScreen() {
   const [lockStrikes, setLockStrikes] = useState(0);
   const rateLock = useRateLock({
     amount: sendAmount, currency: userCurrency, targetCurrency,
+    receivedTarget: amountSource === "RECEIVED" ? parsedReceivedRaw : undefined,   // v7.7 : montant saisi côté « reçoit » → crédité exactement
     enabled: step === 4 && canSend && !rateMissing && lockStrikes < 2,
   });
   useEffect(() => { setLockStrikes(0); }, [sendAmount, targetCurrency, userCurrency]);

@@ -63,7 +63,7 @@ export default function DeleteAccountScreen() {
     setError(null);
     try {
       await api.http.post("/account/delete", { phone: `${country.dial}${normalizeNationalNumber(phone)}`, pin }, { timeout: 30_000 });
-      await logout(); // ferme la session et revient à la connexion
+      await logout(); // ferme la session et revient à la page d'accueil
     } catch (e) {
       setError(explain(e));
       setPin("");

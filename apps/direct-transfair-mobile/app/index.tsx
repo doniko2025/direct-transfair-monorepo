@@ -1,6 +1,10 @@
 // apps/direct-transfair-mobile/app/index.tsx
 // =========================================================
-// ACCUEIL v6.5 — Direct Transf'air (white-label)
+// ACCUEIL v6.6 — Direct Transf'air (white-label)
+// ✅ v6.6 : (1) SANS DÉFILEMENT : la carte du simulateur est plus compacte (marges, lignes de 48, montants 28) et la page s'adapte à la hauteur réelle de
+//    l'écran — si le contenu dépasse encore, le bandeau « 3 étapes » disparaît d'abord, puis les tailles se resserrent (niveaux 0 → 2) ; le défilement
+//    n'est actif que clavier ouvert ; (2) ombre de la carte plus marquée (Android compris : élévation + liseré teinté) ;
+//    (3) après déconnexion (client ou marchand) cette page est la page de repli — voir AuthProvider v7.5.
 // ✅ v6.5 : proposition « B » — la carte du simulateur CHEVAUCHE le panneau du bas (lueur teintée par la couleur de la société) ; le panneau
 //    contient le bandeau « 3 étapes » (icônes), les boutons et les conditions, et descend jusqu'en bas de l'écran (plus de vide). Logo / montants
 //    plus grands sur les écrans hauts. Couleurs toujours 100 % dynamiques.
@@ -61,8 +65,8 @@ type FeeEst = { WALLET: number | null; CASH_PICKUP: number | null };
 /** Lueur de la carte du simulateur : ombre longue teintée par la couleur principale de la société + ombre courte neutre (v6.5). */
 function glowShadow(color: string): ViewStyle {
   return Platform.select<ViewStyle>({
-    web: { boxShadow: `0 22px 46px -10px ${alpha(color, 0.42)}, 0 6px 14px rgba(0,0,0,0.10)` } as any,
-    default: { shadowColor: color, shadowOffset: { width: 0, height: 16 }, shadowOpacity: 0.38, shadowRadius: 24, elevation: 12 },
+    web: { boxShadow: `0 22px 46px -10px ${alpha(color, 0.5)}, 0 6px 14px rgba(0,0,0,0.12)` } as any,
+    default: { shadowColor: color, shadowOffset: { width: 0, height: 16 }, shadowOpacity: 0.42, shadowRadius: 26, elevation: 18 },
   }) as ViewStyle;
 }
 
@@ -96,8 +100,13 @@ export default function Index() {
   const insets = useSafeAreaInsets();
   const kb = useKeyboardOpen();                         // clavier ouvert : on masque le bandeau « 3 étapes » pour garder la place aux montants
   const { height: winH } = useWindowDimensions();
-  const showSteps = !kb && winH >= 700;                 // petit écran : pas de bandeau (la page ne doit pas défiler)
-  const roomy = winH >= 760;                            // grand écran : logo, montants et carte plus généreux (moins de vide)
+  // ── Pas de défilement : on mesure la zone visible et la hauteur réelle du contenu. Si ça dépasse, on resserre par niveaux :
+  //    0 = tout (bandeau « 3 étapes » + tailles normales) · 1 = sans bandeau · 2 = sans bandeau + tailles resserrées.
+  const [viewH, setViewH] = useState(0);
+  const [contentH, setContentH] = useState(0);
+  const [level, setLevel] = useState(0);
+  const showSteps = !kb && level === 0;
+  const tight = level >= 2;                              // tailles resserrées (très petits écrans / police agrandie)
 
   const [rates, setRates] = useState<ExchangeRate[] | null>(null);   // null = chargement
   const [raw, setRaw] = useState("1");                 // montant tapé dans « Vous envoyez »
@@ -167,6 +176,14 @@ export default function Index() {
       : t("land.rateLine", { rate: `1 ${FROM} = ${fmtRate(rate)} ${target}` });
 
   // Ligne de montant : valeur à gauche, pastille de devise (drapeau + code) à droite.
+  // Nouveau calcul de mise en page quand l'écran, le clavier ou la présence des pastilles de frais changent (la carte change alors de hauteur).
+  const hasFees = !!feeEst;
+  useEffect(() => { setLevel(0); }, [winH, kb, hasFees, branding.name]);
+  useEffect(() => {
+    if (kb || !viewH || !contentH) return;
+    if (contentH > viewH + 2 && level < 2) setLevel((l) => l + 1);   // ça dépasse : on resserre d'un cran
+  }, [contentH, viewH, level, kb]);
+
   const currencyChip = (cur: string, onPress?: () => void) => {
     const body = (
       <View style={{ flexDirection: "row", alignItems: "center", gap: 6 }}>
@@ -188,6 +205,11 @@ export default function Index() {
       <ScrollView
         style={{ flex: 1 }}
         contentContainerStyle={{ flexGrow: 1 }}
+        onLayout={(e) => setViewH(e.nativeEvent.layout.height)}
+        onContentSizeChange={(_w, h) => setContentH(h)}
+        scrollEnabled={kb}
+        bounces={false}
+        overScrollMode="never"
         keyboardShouldPersistTaps="handled"
         showsVerticalScrollIndicator={false}
         automaticallyAdjustKeyboardInsets
@@ -197,9 +219,9 @@ export default function Index() {
           <View style={{ width: "100%", maxWidth: 480, alignSelf: "center", paddingHorizontal: 20, paddingTop: top, zIndex: 2 }}>
             {/* ── Marque ── */}
             <Reveal delay={0} distance={-12}>
-              <View style={{ alignItems: "center", gap: 6 }}>
-                <BrandLogo size={roomy ? 80 : 64} />
-                <Text style={{ fontFamily: SYSTEM_FONT, fontSize: roomy ? 23 : 21, lineHeight: roomy ? 28 : 26, fontWeight: "800", letterSpacing: -0.4, color: C.accentDeep }} numberOfLines={1}>
+              <View style={{ alignItems: "center", gap: tight ? 3 : 5 }}>
+                <BrandLogo size={tight ? 52 : 64} />
+                <Text style={{ fontFamily: SYSTEM_FONT, fontSize: tight ? 19 : 21, lineHeight: tight ? 24 : 26, fontWeight: "800", letterSpacing: -0.4, color: C.accentDeep }} numberOfLines={1}>
                   {branding.name}
                 </Text>
                 {!!branding.tagline && (
@@ -211,12 +233,12 @@ export default function Index() {
             </Reveal>
 
             {/* ── Simulateur ── */}
-            <Reveal delay={140} style={{ marginTop: roomy ? 22 : 16 }}>
-              <View style={[{ backgroundColor: C.surface, borderRadius: R.xl, padding: roomy ? 22 : 18 }, glowShadow(C.sun)]}>
+            <Reveal delay={140} style={{ marginTop: tight ? 10 : 14 }}>
+              <View style={[{ backgroundColor: C.surface, borderRadius: R.xl, padding: tight ? 12 : 16, borderWidth: 1, borderColor: alpha(C.sun, 0.12) }, glowShadow(C.sun)]}>
                 <Text style={{ fontFamily: SYSTEM_FONT, fontSize: 12, color: C.muted }}>{t("land.youSend")}</Text>
                 <View style={{ flexDirection: "row", alignItems: "center", justifyContent: "space-between", gap: 12, borderBottomWidth: 1, borderBottomColor: C.line }}>
                   <TextInput
-                    style={{ flex: 1, minWidth: 0, height: roomy ? 58 : 50, padding: 0, fontFamily: SYSTEM_FONT, fontSize: amountFontFor(groupAmount(sendText), roomy ? 34 : 28), fontWeight: "800", color: C.ink }}
+                    style={{ flex: 1, minWidth: 0, height: tight ? 40 : 48, padding: 0, fontFamily: SYSTEM_FONT, fontSize: amountFontFor(groupAmount(sendText), tight ? 24 : 28), fontWeight: "800", color: C.ink }}
                     value={groupAmount(sendText)}
                     onChangeText={(v) => { setSource("SEND"); setRaw(sanitizeAmountInput(v, decimalsFor(FROM))); }}
                     keyboardType="decimal-pad"
@@ -229,10 +251,10 @@ export default function Index() {
                   {currencyChip(FROM)}
                 </View>
 
-                <Text style={{ fontFamily: SYSTEM_FONT, fontSize: 12, color: C.muted, marginTop: roomy ? 16 : 12 }}>{t("land.theyReceive")}</Text>
+                <Text style={{ fontFamily: SYSTEM_FONT, fontSize: 12, color: C.muted, marginTop: tight ? 6 : 10 }}>{t("land.theyReceive")}</Text>
                 <View style={{ flexDirection: "row", alignItems: "center", justifyContent: "space-between", gap: 12, borderBottomWidth: 1, borderBottomColor: C.line }}>
                   <TextInput
-                    style={{ flex: 1, minWidth: 0, height: roomy ? 58 : 50, padding: 0, fontFamily: SYSTEM_FONT, fontSize: amountFontFor(groupAmount(recvText), roomy ? 34 : 28), fontWeight: "800", color: rate === null ? C.faint : C.ink }}
+                    style={{ flex: 1, minWidth: 0, height: tight ? 40 : 48, padding: 0, fontFamily: SYSTEM_FONT, fontSize: amountFontFor(groupAmount(recvText), tight ? 24 : 28), fontWeight: "800", color: rate === null ? C.faint : C.ink }}
                     value={rate === null ? "" : groupAmount(recvText)}
                     onChangeText={(v) => { setSource("RECV"); setRawRecv(sanitizeAmountInput(v, dRecv)); }}
                     keyboardType="decimal-pad"
@@ -246,7 +268,7 @@ export default function Index() {
                   {currencyChip(target, targets.length > 1 ? () => setPickOpen(true) : undefined)}
                 </View>
 
-                <Text style={{ fontFamily: SYSTEM_FONT, fontSize: 12.5, color: C.accentDeep, fontWeight: "600", textAlign: "center", marginTop: roomy ? 16 : 12 }}>{rateText}</Text>
+                <Text style={{ fontFamily: SYSTEM_FONT, fontSize: 12.5, color: C.accentDeep, fontWeight: "600", textAlign: "center", marginTop: tight ? 8 : 10 }}>{rateText}</Text>
 
                 {feeEst && (
                   <Reveal pop style={{ marginTop: 8 }}>

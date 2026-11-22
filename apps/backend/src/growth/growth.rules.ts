@@ -29,6 +29,28 @@ export function applyLockMargin(convertedAmount: number, marginPct: number): num
   return convertedAmount * (1 - Math.max(0, marginPct) / 100);
 }
 
+/**
+ * Facteur appliqué au taux garanti (0,998 pour 0,2 %) : l'application s'en sert quand le client saisit le montant À RECEVOIR, pour calculer
+ * l'envoi nécessaire — le bénéficiaire reçoit alors au moins ce montant, marge comprise (avant : 50 000 saisis → 49 985 reçus).
+ */
+export function lockRateFactor(marginPct: number = lockMarginPct()): number {
+  return 1 - Math.max(0, marginPct) / 100;
+}
+
+/**
+ * Montant à créditer quand le client a SAISI le montant à recevoir. L'envoi est arrondi au centime supérieur, donc le montant calculé
+ * (`received`) dépasse un peu ce qui a été saisi (`desired`, jusqu'à la valeur d'un centime d'envoi) : on crédite alors EXACTEMENT `desired`.
+ * Garde-fous : `desired` doit être positif, ne jamais dépasser `received` (on ne crédite jamais plus que le calcul) et ne pas être en dessous de
+ * `received` de plus que la valeur d'une unité d'envoi (sinon la demande est incohérente avec le montant : on garde `received`).
+ *   effectiveRate : taux garanti (marge comprise) ; senderUnit : plus petite unité de la devise d'envoi (0,01 pour l'euro, 1 pour GNF/XOF).
+ */
+export function fitDesiredReceived(received: number, desired: unknown, effectiveRate: number, senderUnit: number): number {
+  const want = typeof desired === 'number' ? desired : Number(desired);
+  if (!Number.isFinite(want) || want <= 0 || !(received > 0) || want > received) return received;
+  const unitWorth = Math.max(0, effectiveRate) * Math.max(0, senderUnit);
+  return received - want <= unitWorth + 1 ? want : received;
+}
+
 /** Durée de la garantie en minutes : RATE_LOCK_MINUTES (2 à 30), 5 par défaut. */
 export function lockMinutes(raw: unknown = process.env.RATE_LOCK_MINUTES): number {
   const n = typeof raw === 'string' && raw.trim() !== '' ? Number(raw) : (raw as number);

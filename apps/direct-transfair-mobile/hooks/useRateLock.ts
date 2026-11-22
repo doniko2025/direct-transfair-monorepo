@@ -1,6 +1,7 @@
 // apps/direct-transfair-mobile/hooks/useRateLock.ts
 // =========================================================
-// useRateLock v1.0 — taux garanti quelques minutes (lot 16)
+// useRateLock v1.1 — taux garanti quelques minutes (lot 16)
+// ✅ v1.1 : `receivedTarget` — quand le client a SAISI le montant à recevoir, il est transmis au serveur qui crédite exactement ce montant.
 //
 // Sur l'écran de confirmation d'un envoi, demande au serveur de GARANTIR le montant que recevra le bénéficiaire
 // (POST /rate-locks). L'identifiant obtenu est joint à l'envoi (rateLockId) : si la garantie est encore valable, c'est ce
@@ -20,6 +21,8 @@ interface Params {
   amount: number;
   currency: string;
   targetCurrency: string;
+  /** Montant à recevoir saisi par le client (champ « reçoit ») : le serveur le crédite exactement. Absent quand on saisit l'envoi. */
+  receivedTarget?: number;
   enabled?: boolean;
 }
 
@@ -40,8 +43,8 @@ export interface RateLockState {
 
 const DEBOUNCE_MS = 350;
 
-export function useRateLock({ amount, currency, targetCurrency, enabled = true }: Params): RateLockState {
-  const key = `${amount}|${currency}|${targetCurrency}`;
+export function useRateLock({ amount, currency, targetCurrency, receivedTarget, enabled = true }: Params): RateLockState {
+  const key = `${amount}|${currency}|${targetCurrency}|${receivedTarget ?? ""}`;
   const active = enabled && amount > 0 && !!currency && !!targetCurrency && currency !== targetCurrency;
 
   const [state, setState] = useState<{ key: string; lock: RateLock; expiresAtMs: number } | null>(null);
@@ -57,7 +60,7 @@ export function useRateLock({ amount, currency, targetCurrency, enabled = true }
     setLoading(true);
     const timer = setTimeout(async () => {
       try {
-        const lock = await api.quoteRateLock({ amount, currency, targetCurrency });
+        const lock = await api.quoteRateLock({ amount, currency, targetCurrency, ...(receivedTarget && receivedTarget > 0 ? { desiredReceivedAmount: receivedTarget } : {}) });
         if (cancelled) return;
         const expiresAtMs = Date.now() + Math.max(0, lock.secondsLeft) * 1000;
         const prev = lastReceived.current;

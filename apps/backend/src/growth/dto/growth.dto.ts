@@ -16,6 +16,13 @@ export class QuoteRateLockDto {
   @IsString()
   @Matches(CURRENCY)
   targetCurrency!: string;
+
+  /** Montant que le client a SAISI côté « à recevoir » : le serveur crédite exactement ce montant (voir fitDesiredReceived). Facultatif. */
+  @IsOptional()
+  @IsNumber({ maxDecimalPlaces: 2 })
+  @Min(0.01)
+  @Max(1_000_000_000_000)
+  desiredReceivedAmount?: number;
 }
 
 export class CreateMoneyRequestDto {
