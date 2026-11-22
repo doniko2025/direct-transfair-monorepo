@@ -22,7 +22,7 @@ import { RatesService } from '../rates/rates.service';
 import { loadReferralSettings } from './growth.core';
 import {
   MAX_OPEN_LOCKS, MAX_OPEN_REQUESTS, REFERRAL_KIND, addDays, addMinutes, applyLockMargin, lockMarginPct, lockMinutes, parseReferralSettings, parseRequestAmount,
-  paymentSettlesRequest, requestDays, startOfMonthUtc, type PaymentLike,
+  paidInRequestCurrency, paymentSettlesRequest, requestDays, startOfMonthUtc, type PaymentLike,
 } from './growth.rules';
 import type { CreateMoneyRequestDto, QuoteRateLockDto, UpdateReferralConfigDto } from './dto/growth.dto';
 
@@ -223,7 +223,13 @@ export class GrowthService {
           data: { status: 'PAID', respondedAt: now, paidTransactionId: t.id },
         });
         if (done.count > 0) {
-          void this.notify(r.requesterId, 'Demande réglée ✅', `Votre demande de ${num(r.amount).toLocaleString('fr-FR')} ${r.currency} a été réglée.`, 'MONEY_REQUEST_PAID', '/money-requests');
+          const got = paidInRequestCurrency(like, String(r.currency));
+          const asked = `${num(r.amount).toLocaleString('fr-FR')} ${r.currency}`;
+          // Le payeur peut avoir envoyé plus que demandé : on annonce ce qui a vraiment été reçu.
+          const body = Math.abs(got - num(r.amount)) < 0.005
+            ? `Votre demande de ${asked} a été réglée.`
+            : `Votre demande de ${asked} a été réglée : vous avez reçu ${got.toLocaleString('fr-FR')} ${r.currency}.`;
+          void this.notify(r.requesterId, 'Demande réglée ✅', body, 'MONEY_REQUEST_PAID', '/money-requests');
         }
         break;
       }
@@ -242,9 +248,31 @@ export class GrowthService {
     const ids = [...new Set(rows.flatMap((r) => [r.payerId, r.requesterId]))];
     const users = await this.prisma.user.findMany({ where: { id: { in: ids } }, select: { id: true, firstName: true, lastName: true, phone: true } });
     const byId = new Map(users.map((u) => [u.id, u]));
+    const paidIds = rows.map((r) => r.paidTransactionId).filter((v): v is string => !!v);
+    const txs = paidIds.length
+      ? await this.prisma.transaction.findMany({
+          where: { id: { in: paidIds }, clientId },
+          select: { id: true, currency: true, amount: true, targetCurrency: true, receivedAmount: true },
+        })
+      : [];
+    const txById = new Map(txs.map((t) => [t.id, t]));
     const views = rows.map((r) => {
       const mine = r.requesterId === user.id;
-      return this.requestView(r, mine ? 'SENT' : 'RECEIVED', byId.get(mine ? r.payerId : r.requesterId) ?? null);
+      const tx = r.paidTransactionId ? txById.get(r.paidTransactionId) : undefined;
+      const settlement = tx
+        ? {
+            transactionId: tx.id,
+            sentAmount: num(tx.amount),
+            sentCurrency: String(tx.currency),
+            receivedAmount: paidInRequestCurrency(
+              { senderId: '', recipientId: null, clientId, status: 'PAID', currency: String(tx.currency), amount: num(tx.amount),
+                targetCurrency: tx.targetCurrency ? String(tx.targetCurrency) : null, receivedAmount: num(tx.receivedAmount), createdAt: now, deletedAt: null },
+              String(r.currency),
+            ),
+            receivedCurrency: String(r.currency),
+          }
+        : null;
+      return this.requestView(r, mine ? 'SENT' : 'RECEIVED', byId.get(mine ? r.payerId : r.requesterId) ?? null, settlement);
     });
     return {
       received: views.filter((v) => v.direction === 'RECEIVED'),
@@ -257,9 +285,10 @@ export class GrowthService {
     r: { id: string; amount: Prisma.Decimal; currency: string; note: string | null; status: string; expiresAt: Date; createdAt: Date; respondedAt: Date | null; payerId: string; requesterId: string },
     direction: 'SENT' | 'RECEIVED',
     other: { firstName?: string | null; lastName?: string | null; phone?: string | null } | null,
+    settlement: { transactionId: string; sentAmount: number; sentCurrency: string; receivedAmount: number; receivedCurrency: string } | null = null,
   ) {
     return {
-      id: r.id, direction, status: r.status, amount: num(r.amount), currency: r.currency, note: r.note,
+      id: r.id, direction, status: r.status, amount: num(r.amount), currency: r.currency, note: r.note, settlement,
       counterpartId: direction === 'SENT' ? r.payerId : r.requesterId, counterpartName: fullName(other), counterpartPhone: other?.phone ?? null,
       expiresAt: r.expiresAt.toISOString(), createdAt: r.createdAt.toISOString(), respondedAt: r.respondedAt?.toISOString() ?? null,
     };

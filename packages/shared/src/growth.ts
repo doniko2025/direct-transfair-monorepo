@@ -49,6 +49,19 @@ export interface MoneyRequestView {
   expiresAt: string;
   createdAt: string;
   respondedAt: string | null;
+  /** Envoi qui a réglé la demande (null tant qu'elle n'est pas réglée). Le montant demandé (`amount`) reste celui de la demande. */
+  settlement: MoneyRequestSettlement | null;
+}
+
+/** Ce qui a réellement circulé pour régler la demande : peut dépasser le montant demandé. */
+export interface MoneyRequestSettlement {
+  transactionId: string;
+  /** Montant envoyé par le payeur, dans sa devise. */
+  sentAmount: number;
+  sentCurrency: string;
+  /** Montant reçu par le demandeur, dans la devise de la demande. */
+  receivedAmount: number;
+  receivedCurrency: string;
 }
 
 export interface MoneyRequestsOverview {

@@ -2,13 +2,15 @@
 // =========================================================
 // DEMANDES D'ARGENT — liste (lot 16)
 // ✅ v1.1 : montants réduits (22 au lieu de 30), carte et avatar resserrés, barre du haut et bouton compacts (échelle de l'accueil).
+// ✅ v1.2 : une demande RÉGLÉE affiche ce qui a réellement circulé (reçu / envoyé), pas le montant demandé ; « Demandé : … » en rappel
+//          quand les deux diffèrent, et un lien vers le détail du transfert.
 // Onglets « Reçues » / « Envoyées ». Une demande reçue se règle en un geste : « Payer » ouvre l'envoi avec le destinataire
 // (et le montant, si la devise est la vôtre) déjà remplis ; la demande passe seule à « Réglée » une fois l'envoi abouti.
 // Refuser (payeur) et annuler (demandeur) demandent une confirmation. Les demandes échues expirent côté serveur.
 // =========================================================
 
 import React, { useMemo, useState } from "react";
-import { Alert, Platform, View } from "react-native";
+import { Alert, Platform, Pressable, View } from "react-native";
 import { useRouter } from "expo-router";
 import { api } from "../../services/api";
 import type { MoneyRequestStatus, MoneyRequestView, MoneyRequestsOverview } from "../../services/growthTypes";
@@ -29,8 +31,14 @@ const TONE: Record<MoneyRequestStatus, "warn" | "pos" | "danger" | "neutral"> = 
 function RequestCard({ r, index, busy, onPay, onClose }: { r: MoneyRequestView; index: number; busy: boolean; onPay: () => void; onClose: () => void }) {
   const t = useT();
   const { C } = useUI();
+  const router = useRouter();
   const received = r.direction === "RECEIVED";
   const pending = r.status === "PENDING";
+  // Réglée : on montre ce qui a réellement circulé (le demandeur voit ce qu'il a reçu, le payeur ce qu'il a envoyé).
+  const s = r.status === "PAID" ? r.settlement : null;
+  const shownAmount = s ? (received ? s.sentAmount : s.receivedAmount) : r.amount;
+  const shownCurrency = s ? (received ? s.sentCurrency : s.receivedCurrency) : r.currency;
+  const differs = !!s && Math.abs(s.receivedAmount - r.amount) > 0.005;
   return (
     <Rise delay={Math.min(index, 6) * 60}>
       <Card style={{ marginBottom: 10 }} pad={14}>
@@ -44,8 +52,20 @@ function RequestCard({ r, index, busy, onPay, onClose }: { r: MoneyRequestView; 
         </View>
 
         <UText v="display" style={{ marginTop: 10, fontSize: 22, lineHeight: 28 }} color={received && pending ? C.accentDeep : undefined} numberOfLines={1} adjustsFontSizeToFit>
-          {`${fmtMoney(r.amount, r.currency)} ${r.currency}`}
+          {`${fmtMoney(shownAmount, shownCurrency)} ${shownCurrency}`}
         </UText>
+        {s && (
+          <View style={{ flexDirection: "row", alignItems: "center", justifyContent: "space-between", gap: 8, marginTop: 4 }}>
+            <UText v="caption" tone="muted" style={{ flex: 1 }} numberOfLines={2}>
+              {differs
+                ? t("grw.mr.askedDiff", { amount: `${fmtMoney(r.amount, r.currency)} ${r.currency}` })
+                : t(received ? "grw.mr.paidSent" : "grw.mr.paidGot")}
+            </UText>
+            <Pressable onPress={() => router.push(`/(tabs)/transactions/${s.transactionId}` as any)} hitSlop={8} accessibilityRole="link">
+              <UText v="caption" color={C.accentDeep} style={{ fontWeight: "700" }}>{t("grw.mr.seeTx")} ›</UText>
+            </Pressable>
+          </View>
+        )}
         {!!r.note && <UText v="body" tone="muted" style={{ marginTop: 4 }} numberOfLines={3}>{`« ${r.note} »`}</UText>}
         {pending && <UText v="caption" tone="muted" style={{ marginTop: 8 }}>{t("grw.mr.expires", { date: fmtDate(r.expiresAt) })}</UText>}
 
