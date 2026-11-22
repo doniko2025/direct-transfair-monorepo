@@ -257,8 +257,8 @@ export function statusColor(C: UIColors, status: string): string {
 
 // ─── Ligne de transaction (maquette « Activité ») ────────
 export function TxRow({
-  tx, userId, onPress, last, showStatus = true, compact = true,
-}: { tx: any; userId?: string; onPress?: () => void; last?: boolean; showStatus?: boolean; compact?: boolean }) {
+  tx, userId, onPress, last, showStatus = true, compact = true, padY,
+}: { tx: any; userId?: string; onPress?: () => void; last?: boolean; showStatus?: boolean; compact?: boolean; /** Espace vertical de la ligne (défaut : 10 en compact, 14 sinon). */ padY?: number }) {
   const { C } = useUI();
   useT();   // se redessine au changement de langue (libellés d'opération et dates lus via tr/fmt)
   const v = describeTx(tx, userId);
@@ -270,7 +270,7 @@ export function TxRow({
       onPress={onPress}
       accessibilityRole="button"
       style={({ pressed }) => [{
-        flexDirection: 'row', alignItems: 'center', gap: compact ? 12 : 14, paddingVertical: compact ? 10 : 14,
+        flexDirection: 'row', alignItems: 'center', gap: compact ? 12 : 14, paddingVertical: padY ?? (compact ? 10 : 14),
         borderBottomWidth: last ? 0 : 1, borderBottomColor: C.line, opacity: pressed ? 0.6 : 1,
       }]}
     >
