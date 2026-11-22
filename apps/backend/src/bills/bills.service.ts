@@ -174,7 +174,8 @@ export class BillsService {
     const looked = await this.lookupInternal(biller, dto);
 
     let amount: number;
-    if (biller.amountMode === 'FROM_LOOKUP') {
+    // Montant fourni par le facturier seulement si son connecteur sait l'interroger ; sinon (facturier mal réglé) le client saisit le montant.
+    if (biller.amountMode === 'FROM_LOOKUP' && looked.supported) {
       const due = looked.found?.amountDue;
       if (!due || due <= 0) throw new ConflictException('Aucun montant à payer sur cette facture.');
       amount = assertValidAmount(due, currency);

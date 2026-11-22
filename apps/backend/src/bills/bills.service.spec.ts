@@ -253,6 +253,23 @@ describe('BillsService — lecture', () => {
     expect(db.payments).toHaveLength(0);
   });
 
+  it('montant fourni par le facturier + connecteur qui sait interroger (simulation) : le montant vient de la recherche, pas du client', async () => {
+    const { service } = setup({ biller: { connectorKey: 'sandbox', amountMode: 'FROM_LOOKUP', feeFixed: 0, feePct: 0 } });
+    const lookup = await service.lookup(auth, 'b1', { reference: '0123456789' } as never);
+    expect(lookup.supported).toBe(true);
+    expect(lookup.amountDue).toBeGreaterThan(0);
+    const q = await service.quote(auth, 'b1', dto({ amount: 1 }) as never);
+    expect(q.amount).toBe(lookup.amountDue);
+  });
+
+  it('facturier mal réglé (montant du facturier mais connecteur manuel, sans recherche) : le client saisit le montant au lieu d\'être bloqué', async () => {
+    const { service } = setup({ biller: { connectorKey: 'manual', amountMode: 'FROM_LOOKUP', feeFixed: 0, feePct: 0 } });
+    const lookup = await service.lookup(auth, 'b1', { reference: '0123456789' } as never);
+    expect(lookup.supported).toBe(false);
+    const q = await service.quote(auth, 'b1', dto({ amount: 20_000 }) as never);
+    expect(q.amount).toBe(20_000);
+  });
+
   it('un client ne lit pas la facture d\'un autre', async () => {
     const { service } = setup();
     await expect(service.getOne(auth, 'inconnue')).rejects.toThrow(NotFoundException);

@@ -26,7 +26,7 @@
 import React, { useState, useRef, useEffect, useCallback } from "react";
 import { ActivityIndicator, Alert, Pressable, ScrollView, View } from 'react-native';
 import { useRouter } from "expo-router";
-import { handleKycRequired } from "../utils/kycGate";
+import { showApiError } from "../utils/actionableError"; // lot 19 — erreurs qui proposent une action
 import { stripDial, parseInternational, isNumericLike, onlyDigits, toE164, toLegacyDoubled, formatNationalInput, keepsLeadingZero } from "../utils/phone";
 import { amountFontFor, decimalsFor, fmtMoney, fmtRate, groupAmount, parseAmount, sanitizeAmountInput } from "../utils/amount";
 import { Ionicons } from '../components/ui/Icon';
@@ -292,10 +292,8 @@ export default function WalletTransferScreen() {
       }
       setShowPin(false);
       setPin("");
-      // Identité non vérifiée : on oriente vers l'écran de vérification au lieu d'une erreur sèche.
-      if (handleKycRequired(e, router)) return;
-      const msg = e?.response?.data?.message ?? t("wt.failed");
-      Alert.alert(t("common.error"), Array.isArray(msg) ? msg[0] : msg);
+      // lot 19 — identité à vérifier, plafond, solde, taux indisponible, réseau : chaque refus propose la suite (voir utils/actionableError.ts).
+      showApiError(e, router, { fallback: t("wt.failed"), onRetry: () => { setPin(""); setPinError(null); setShowPin(true); } });
     } finally { setLoading(false); }
   };
 

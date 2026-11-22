@@ -1,6 +1,7 @@
 // apps/direct-transfair-mobile/app/(tabs)/transactions/[id].tsx
 // ✅ Design « Corridor » : polices Manrope/Fraunces (composant Text) et icônes Lucide (composant Icon) — imports uniquement, logique inchangée.
 // =========================================================
+// ✅ v8.3 (lot 19) : frise de SUIVI (Enregistré → Validé → À retirer → Payé, rafraîchie toute seule), bouton WhatsApp sous le code de retrait, bouton « Renvoyer ».
 // ✅ v8.2 : page COMPACTE — montant à 34 (taille de l'accueil), cartes et lignes resserrées, polices 12–14, référence sur UNE ligne (rétrécie au besoin).
 // TRANSACTION DETAIL v8.1
 // ✅ v8.1 : REDESIGN — « Vous » remplacé par le VRAI nom et prénom (expéditeur et destinataire), carte « De → Vers » façon Wise / Western
@@ -33,6 +34,12 @@ import { fmtDateTime, getLocale } from "../../../i18n/runtime";
 import { fmtMoney } from "../../../utils/amount";
 import { motifLabel } from "../../../utils/motifs";
 import { ReceiptPdfActions } from "../../../components/receipt/ReceiptPdfActions";
+import TrackingStrip from "../../../components/transfer/TrackingStrip"; // lot 19 — suivi
+import WhatsAppPill from "../../../components/transfer/WhatsAppPill"; // lot 19 — code de retrait par WhatsApp
+import { buildTracking } from "../../../utils/trackingSteps";
+import { openWhatsApp, pickupMessage } from "../../../utils/whatsapp";
+import { userCurrency } from "../../../utils/currency";
+import { useTenant } from "../../../providers/TenantProvider";
 
 function toNum(v: unknown): number {
   if (typeof v === "number" && isFinite(v)) return v;
@@ -49,6 +56,7 @@ export default function TransactionDetailScreen() {
   const router   = useRouter();
   const t = useT();
   const { user } = useAuth();
+  const { branding } = useTenant();
   const { C } = useUI();
 
   const [transaction, setTransaction] = useState<any>(null);
@@ -59,10 +67,11 @@ export default function TransactionDetailScreen() {
 
   useEffect(() => { void loadTransaction(); }, [idParam]);
 
-  const loadTransaction = async () => {
-    setLoadError(null);
+  // `silent` : rafraîchissement automatique du suivi — ni écran de chargement, ni message d'erreur si le réseau flanche un instant.
+  const loadTransaction = async (silent = false) => {
+    if (!silent) setLoadError(null);
     try {
-      setLoading(true);
+      if (!silent) setLoading(true);
       if (!idParam) return setTransaction(null);
       const ms = defaultTimeoutMs();
       let found: any = null;
@@ -80,11 +89,21 @@ export default function TransactionDetailScreen() {
       }
       setTransaction(found || null);
     } catch (e) {
+      if (silent) return;
       setTransaction(null);
       setLoadError(explainLoadError(e));
     }
-    finally { setLoading(false); }
+    finally { if (!silent) setLoading(false); }
   };
+
+  // lot 19 — tant que l'envoi n'est pas terminé, la page se met à jour seule (le bénéficiaire retire l'argent : on le voit).
+  useEffect(() => {
+    if (!transaction) return;
+    const tracking = buildTracking(transaction, "");
+    if (!tracking || tracking.final || transaction.recipientId === user?.id) return;
+    const timer = setInterval(() => { void loadTransaction(true); }, 15000);
+    return () => clearInterval(timer);
+  }, [transaction?.id, transaction?.status]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Message rassurant si le serveur met plus de 4 s à répondre
   useEffect(() => {
@@ -260,6 +279,29 @@ export default function TransactionDetailScreen() {
   const showShareReceipt = !!transaction.id; // le reçu PDF existe à tous les statuts (le statut du moment y figure)
   const showCopyCode     = !isDeposit && (isPending || isValidated);
 
+  // ── lot 19 : suivi, WhatsApp, « Renvoyer » (envois faits par l'utilisateur uniquement) ──
+  const isMyTransfer  = (type === "TRANSFER" || type === "SCHEDULED") && !isIncoming;
+  const recipientFirst = String(recipientName).split(" ")[0] ?? "";
+  const isCashSend    = String(transaction.payoutMethod ?? "").toUpperCase() === "CASH_PICKUP";
+  const handleWhatsApp = () => {
+    const sender = meName;
+    const amount = `${fmt(toNum(transaction.receivedAmount) > 0 ? toNum(transaction.receivedAmount) : toNum(transaction.amount), transaction.targetCurrency ?? transaction.currency)} ${transaction.targetCurrency ?? transaction.currency}`;
+    void openWhatsApp(pickupMessage({ name: recipientFirst, sender, amount, code: String(transaction.reference), brand: branding.name }), transaction.beneficiary?.phone);
+  };
+  const repeatBeneficiaryId = transaction.beneficiaryId ?? transaction.beneficiary?.id;
+  const canRepeat = isMyTransfer && (isCashSend ? !!repeatBeneficiaryId : !!transaction.beneficiary?.phone);
+  const handleRepeat = () => {
+    const sameCurrency = String(transaction.currency) === userCurrency(user);
+    router.push({
+      pathname: "/(tabs)/send",
+      params: {
+        mode: isCashSend ? "CASH" : "WALLET",
+        ...(isCashSend ? { beneficiaryId: String(repeatBeneficiaryId) } : { phone: String(transaction.beneficiary.phone) }),
+        ...(sameCurrency ? { amount: String(toNum(transaction.amount)) } : {}),
+      },
+    } as any);
+  };
+
   const hasConversion = !!transaction.targetCurrency && transaction.targetCurrency !== transaction.currency;
   const dateLabel = fmtDateTime(transaction.createdAt, { day: "2-digit", month: "short", year: "numeric", hour: "2-digit", minute: "2-digit" });
   const totalLabel = isIncoming ? t("txd.totalCredited") : t("txd.totalDebited");
@@ -282,6 +324,8 @@ export default function TransactionDetailScreen() {
         <UText v="bodyStrong" tone="muted" style={{ fontSize: 13 }}>{getTxLabel()}</UText>
       </View>
 
+      {isMyTransfer && <TrackingStrip tx={transaction} recipientFirstName={recipientFirst} />}
+
       {showCopyCode && (
         <Card tone="accent" pad={12} style={{ alignItems: "center", marginBottom: 10 }}>
           <UText v="overline" tone="muted">{t("txd.withdrawCode")}</UText>
@@ -291,6 +335,7 @@ export default function TransactionDetailScreen() {
             </UText>
             <Ionicons name="copy-outline" size={20} color={C.ink} />
           </Pressable>
+          {isMyTransfer && isCashSend && <View style={{ marginTop: 10 }}><WhatsAppPill onPress={handleWhatsApp} /></View>}
         </Card>
       )}
 
@@ -370,6 +415,7 @@ export default function TransactionDetailScreen() {
       {/* ── Actions secondaires, discrètes ── */}
       <View style={{ marginTop: 10, flexDirection: "row", flexWrap: "wrap", justifyContent: "center", gap: 8 }}>
         {showUserCancel && <Button label={t("txd.cancelTx")} kind="danger" small loading={processing} onPress={handleCancel} />}
+        {canRepeat && <Button label={t("rep.button")} icon="refresh-outline" kind="soft" small onPress={handleRepeat} />}
         {!isIncoming && (
           <Button
             label={t("txd.report")}

@@ -105,6 +105,13 @@ export class BillsAdminService {
     if (!this.connectors.get(key)) throw new BadRequestException(`Connecteur « ${key} » indisponible sur ce serveur.`);
   }
 
+  /** « Montant fourni par le facturier » n'a de sens que si le connecteur sait interroger la facture. */
+  private checkAmountMode(amountMode: string | undefined, connectorKey: string) {
+    if (amountMode === 'FROM_LOOKUP' && !this.connectors.supportsLookup(connectorKey)) {
+      throw new BadRequestException("Le montant ne peut venir du facturier que si le mode de règlement sait interroger la facture. Choisissez « Montant libre » : le client saisira lui-même le montant.");
+    }
+  }
+
   private checkBounds(min: number | null | undefined, max: number | null | undefined) {
     if (min !== null && min !== undefined && max !== null && max !== undefined && min > max) throw new BadRequestException('Le montant minimum dépasse le maximum.');
   }
@@ -115,6 +122,7 @@ export class BillsAdminService {
     if (!(SUPPORTED_CURRENCIES as readonly string[]).includes(currency)) throw new BadRequestException('Devise non prise en charge.');
     const connectorKey = dto.connectorKey?.trim() || 'manual';
     this.checkConnector(connectorKey);
+    this.checkAmountMode(dto.amountMode ?? 'FREE', connectorKey);
     this.checkBounds(dto.minAmount, dto.maxAmount);
     if ((await this.prisma.biller.count({ where: { clientId } })) >= MAX_BILLERS) throw new BadRequestException(`${MAX_BILLERS} facturiers au maximum.`);
 
@@ -188,6 +196,8 @@ export class BillsAdminService {
     if (dto.referencePattern !== undefined) data.referencePattern = assertSafePattern(dto.referencePattern, 'Format de la référence');
     if (dto.fields !== undefined) data.fields = parseFieldDefs(dto.fields) as unknown as Prisma.InputJsonValue;
     if (dto.amountMode !== undefined) data.amountMode = dto.amountMode as never;
+    // Cohérence mode du montant ↔ connecteur, sur les valeurs finales (celles du formulaire, sinon celles déjà enregistrées).
+    this.checkAmountMode(dto.amountMode ?? current.amountMode, dto.connectorKey !== undefined ? (dto.connectorKey.trim() || 'manual') : current.connectorKey);
     if (dto.minAmount !== undefined) data.minAmount = dto.minAmount;
     if (dto.maxAmount !== undefined) data.maxAmount = dto.maxAmount;
     if (dto.feeFixed !== undefined) data.feeFixed = dto.feeFixed;

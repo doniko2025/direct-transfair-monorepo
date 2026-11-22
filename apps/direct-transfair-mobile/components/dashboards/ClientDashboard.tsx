@@ -33,6 +33,7 @@ import { useT } from "../../providers/I18nProvider";
 import GrowthCards from "../home/GrowthCards"; // lot 16 — raccourcis ronds (v2.0)
 import ExpressSendCard from "../home/ExpressSendCard"; // design E
 import RequestEnvelope from "../home/RequestEnvelope"; // enveloppe animée : demande d'argent reçue
+import RepeatSendChip from "../home/RepeatSendChip"; // lot 19 — « Renvoyer » le dernier envoi en un geste
 import { userCurrency } from "../../utils/currency";
 
 
@@ -96,6 +97,8 @@ export default function ClientDashboard() {
       <ExpressSendCard currency={currency} countryName={(user as any)?.country} style={{ marginTop: -30, marginHorizontal: 10 }} />
 
       <GrowthCards billsOpen={billsOpen} onTopup={() => router.push("/(tabs)/recharge")} />
+
+      <RepeatSendChip />
 
       {kyc && !kyc.verified ? (
         <Notice

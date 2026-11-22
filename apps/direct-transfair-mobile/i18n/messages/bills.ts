@@ -55,6 +55,8 @@ export const bills = {
   'bill.payShort':        { fr: 'Payer', en: 'Pay', pt: 'Pagar' },
   'bill.holderCheck':     { fr: 'Vérifiez que le nom correspond bien à la personne à qui vous payez.', en: 'Check that the name is the person you mean to pay.', pt: 'Confirme que o nome é da pessoa a quem quer pagar.' },
   'bill.due':             { fr: 'Montant dû : {amount}', en: 'Amount due: {amount}', pt: 'Valor em dívida: {amount}' },
+  'bill.looking':         { fr: 'Recherche de la facture…', en: 'Looking up the bill…', pt: 'A procurar a fatura…' },
+  'bill.amountAuto':      { fr: 'Le montant s\'affiche automatiquement dès que le numéro de facture est saisi.', en: 'The amount appears automatically once the bill number is entered.', pt: 'O montante aparece automaticamente assim que o número da fatura é introduzido.' },
   'bill.notChecked':      { fr: 'Ce facturier ne permet pas de vérifier la facture à l\'avance : contrôlez bien le numéro saisi.', en: 'This biller cannot check the bill in advance: double-check the number you entered.', pt: 'Este faturador não permite verificar a fatura antecipadamente: confira bem o número introduzido.' },
   'bill.wallet':          { fr: 'Payer avec mon portefeuille', en: 'Pay from my wallet', pt: 'Pagar com a minha carteira' },
   'bill.continue':        { fr: 'Continuer', en: 'Continue', pt: 'Continuar' },

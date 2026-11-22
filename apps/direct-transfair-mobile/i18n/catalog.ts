@@ -13,6 +13,7 @@ import { legal } from './messages/legal';
 import { theme } from './messages/theme';
 import { bills } from './messages/bills';
 import { growth } from './messages/growth';
+import { assist } from './messages/assist';
 
-export const CATALOG = { ...common, ...auth, ...account, ...home, ...transfer, ...activity, ...profile, ...merchant, ...legal, ...theme, ...bills, ...growth } as const satisfies Record<string, Trio>;
+export const CATALOG = { ...common, ...auth, ...account, ...home, ...transfer, ...activity, ...profile, ...merchant, ...legal, ...theme, ...bills, ...growth, ...assist } as const satisfies Record<string, Trio>;
 export type MessageKey = keyof typeof CATALOG;

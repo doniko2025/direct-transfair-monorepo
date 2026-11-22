@@ -261,7 +261,7 @@ export type BillReconcileResult = BillReconcileNeedsMapping | BillReconcileRepor
 export function createBillsApi(http: HttpClient) {
   const enc = encodeURIComponent;
   return {
-    meta: () => http.get<{ connectors: Array<{ key: string; label: string; automatic: boolean }> }>('/bills-admin/meta'),
+    meta: () => http.get<{ connectors: Array<{ key: string; label: string; automatic: boolean; lookup: boolean }> }>('/bills-admin/meta'),
     billers: () => http.get<BillerAdmin[]>('/bills-admin/billers'),
     createBiller: (input: BillerInput) => http.post<BillerAdmin>('/bills-admin/billers', input),
     updateBiller: (id: string, input: BillerInput) => http.patch<BillerAdmin>(`/bills-admin/billers/${enc(id)}`, input),

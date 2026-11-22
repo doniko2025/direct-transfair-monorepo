@@ -42,6 +42,9 @@ import * as Clipboard from "expo-clipboard";
 import * as Contacts from "expo-contacts/legacy";
 import { useRouter, useFocusEffect, useLocalSearchParams } from "expo-router";
 import { handleKycRequired } from "../../utils/kycGate";
+import { openWhatsApp, pickupMessage } from "../../utils/whatsapp"; // lot 19 — prévenir le bénéficiaire par WhatsApp
+import WhatsAppPill from "../../components/transfer/WhatsAppPill";
+import { showApiError } from "../../utils/actionableError"; // lot 19 — erreurs qui proposent une action
 import { Ionicons } from "../../components/ui/Icon";
 import { api } from "../../services/api";
 import { runOnce } from "../../services/idempotency";
@@ -137,6 +140,7 @@ type ReceiptData = {
   receivedAmount: number;
   receivedCurrency: string;
   beneficiaryName: string;
+  beneficiaryPhone?: string | null; // lot 19 — pour ouvrir WhatsApp directement sur le bénéficiaire
   reference: string;
   code?: string;       // code de retrait (Cash Pickup ET Wallet non réclamé)
   motif?: string | null;
@@ -170,8 +174,15 @@ function SuccessStep({ data, onDone }: { data: ReceiptData; onDone: () => void }
   const first = data.beneficiaryName.split(" ")[0];
   const received = `${fmt(data.receivedAmount, data.receivedCurrency)} ${data.receivedCurrency}`;
 
+  const { user: me } = useAuth();
   const handleShare = async () => {
     try { await Share.share({ message: buildReceiptText(data, branding.name) }); } catch {}
+  };
+  // lot 19 — message prêt à envoyer au bénéficiaire : qui, combien, code de retrait, quoi faire.
+  const handleWhatsApp = () => {
+    if (!data.code) return;
+    const sender = [me?.firstName, me?.lastName].filter(Boolean).join(" ").trim() || branding.name;
+    void openWhatsApp(pickupMessage({ name: first, sender, amount: received, code: data.code, brand: branding.name }), data.beneficiaryPhone);
   };
   const handleCopyCode = async () => {
     if (!data.code) return;
@@ -208,12 +219,15 @@ function SuccessStep({ data, onDone }: { data: ReceiptData; onDone: () => void }
           <Card tone="accent" style={{ alignItems: "center" }}>
             <UText v="overline" tone="accent">{t("send.codeLabel")}</UText>
             <UText v="display" style={{ fontSize: 28, lineHeight: 34, letterSpacing: 4, marginVertical: 6 }}>{data.code}</UText>
-            <Button
-              label={copied ? t("send.copied") : t("send.copyCode")}
-              icon={copied ? "checkmark" : "copy-outline"}
-              kind="outline" small full={false}
-              onPress={handleCopyCode}
-            />
+            <View style={{ flexDirection: "row", alignItems: "center", justifyContent: "center", flexWrap: "wrap", gap: 10 }}>
+              <Button
+                label={copied ? t("send.copied") : t("send.copyCode")}
+                icon={copied ? "checkmark" : "copy-outline"}
+                kind="outline" small full={false}
+                onPress={handleCopyCode}
+              />
+              <WhatsAppPill onPress={handleWhatsApp} />
+            </View>
           </Card>
         </Reveal>
       )}
@@ -1015,6 +1029,7 @@ export default function SendMoneyScreen() {
           receivedAmount: Number(tx?.receivedAmount) > 0 ? Number(tx.receivedAmount) : receivedAmt,
           receivedCurrency: tx?.targetCurrency ?? targetCurrency,
           beneficiaryName: detectedBeneficiary?.fullName ?? `${formatPhone(toE164(targetCountryData.dialCode, walletInputDigits))}`,
+          beneficiaryPhone: detectedBeneficiary?.phone ?? toE164(targetCountryData.dialCode, walletInputDigits),
           reference: String(reference),
           code: walletCode, // ✅ v2.13 — undefined si déjà crédité (comportement inchangé)
           motif,
@@ -1052,6 +1067,7 @@ export default function SendMoneyScreen() {
           receivedAmount: Number(tx?.receivedAmount) > 0 ? Number(tx.receivedAmount) : receivedAmt,
           receivedCurrency: tx?.targetCurrency ?? targetCurrency,
           beneficiaryName: sel?.fullName ?? t("send.benefFallback"),
+          beneficiaryPhone: sel?.phone ?? null,
           reference: String(reference),
           code,
           motif,
@@ -1072,12 +1088,14 @@ export default function SendMoneyScreen() {
       }
       setShowPin(false);
       setPin("");
-      // Identité non vérifiée : on oriente vers l'écran de vérification au lieu d'une erreur sèche.
-      if (handleKycRequired(e, router)) return;
-      const msg = e.response?.data?.message || t("send.genericError");
       // ✅ lot 16 — refus avec garantie jointe : on en demande une nouvelle (montant reçu réaffiché) ; après deux refus on n'insiste plus.
       if (lockIdToSend && e.response?.status === 400) { setLockStrikes((n) => n + 1); rateLock.renewNow(); }
-      Alert.alert(t("common.error"), Array.isArray(msg) ? msg[0] : msg);
+      // ✅ lot 19 — chaque refus propose une action : identité à vérifier, plafond (envoyer le maximum permis), recharge, réessayer.
+      showApiError(e, router, {
+        fallback: t("send.genericError"),
+        onRetry: () => handleAction(), // rouvre la saisie du code secret ; la clé d'idempotence évite tout double envoi
+        onUseAmount: (max) => { amountTouched.current = true; setAmountSource("SEND"); setRawAmount(sanitizeAmountInput(String(max), dS)); go(2); },
+      });
     } finally { setSending(false); }
   };
 

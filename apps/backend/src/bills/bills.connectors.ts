@@ -111,7 +111,13 @@ export class BillConnectorsService {
   }
 
   /** Liste proposée dans le portail (formulaire d'un facturier). */
-  available(): Array<{ key: string; label: string; automatic: boolean }> {
-    return [...this.connectors.values()].filter((c) => this.get(c.key)).map((c) => ({ key: c.key, label: c.label, automatic: c.automatic }));
+  available(): Array<{ key: string; label: string; automatic: boolean; lookup: boolean }> {
+    return [...this.connectors.values()].filter((c) => this.get(c.key)).map((c) => ({ key: c.key, label: c.label, automatic: c.automatic, lookup: typeof c.lookup === 'function' }));
+  }
+
+  /** Ce connecteur sait-il « interroger la facture » (titulaire, montant dû) ? Sans cela, le client saisit le montant. */
+  supportsLookup(key: string): boolean {
+    const c = this.get(key);
+    return !!c && typeof c.lookup === 'function';
   }
 }

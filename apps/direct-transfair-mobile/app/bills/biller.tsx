@@ -86,7 +86,9 @@ export default function PayBillScreen() {
 
   const currency = biller?.currency ?? userCurrency(user);
   const walletCcy = walletCurrency ?? userCurrency(user);
-  const fixed = biller?.amountMode === "FROM_LOOKUP";
+  // Montant imposé par le facturier : seulement si son connecteur sait interroger la facture. Sinon (ou si la recherche n'est pas
+  // possible), le client saisit le montant — jamais d'écran sans champ de saisie.
+  const fixed = biller?.amountMode === "FROM_LOOKUP" && !!biller.automatic && lookup?.supported !== false;
   const amount = useMemo(
     () => (fixed ? roundTo(lookup?.amountDue ?? 0, decimalsFor(currency)) : roundTo(parseAmount(amountText), decimalsFor(currency))),
     [fixed, lookup, amountText, currency],
@@ -132,6 +134,17 @@ export default function PayBillScreen() {
       setLooking(false);
     }
   };
+
+  // Vérification automatique : dès que le numéro (et les champs demandés) sont complets, on interroge le facturier sans appui de bouton.
+  const lastAuto = useRef("");
+  useEffect(() => {
+    if (!biller?.automatic || step !== "form" || lookup || looking || fieldError()) return;
+    const sig = JSON.stringify([reference.trim(), cleanFields()]);
+    if (lastAuto.current === sig) return; // déjà tentée (échec compris) : pas de boucle, le bouton permet de réessayer
+    const h = setTimeout(() => { lastAuto.current = sig; void doLookup(); }, 800);
+    return () => clearTimeout(h);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [biller, reference, fields, step, lookup, looking]);
 
   const check = async () => {
     setShowErrors(true);
@@ -278,7 +291,8 @@ export default function PayBillScreen() {
           {fixed ? (
             <Card pad={18}>
               <UText v="caption" tone="muted">{t("bill.amountFixed")}</UText>
-              <UText v="title" style={{ marginTop: 6 }}>{lookup?.amountDue ? money(lookup.amountDue, currency) : "—"}</UText>
+              <UText v="title" style={{ marginTop: 6 }}>{lookup?.amountDue ? money(lookup.amountDue, currency) : looking ? t("bill.looking") : "—"}</UText>
+              {!lookup?.amountDue && !looking ? <UText v="caption" tone="muted" style={{ marginTop: 6 }}>{t("bill.amountAuto")}</UText> : null}
             </Card>
           ) : (
             <Card pad={20}>

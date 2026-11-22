@@ -289,7 +289,7 @@ function BillerDialog({
 }: {
   biller: BillerAdmin | null;
   currencies: string[];
-  connectors: Array<{ key: string; label: string; automatic: boolean }>;
+  connectors: Array<{ key: string; label: string; automatic: boolean; lookup: boolean }>;
   onClose: () => void;
   onDone: (m: string) => void;
 }) {
@@ -297,6 +297,7 @@ function BillerDialog({
   const [errors, setErrors] = useState<Record<string, string>>({});
   const { busy, error, run } = useDialogAction(onDone);
   const set = <K extends keyof FormState>(key: K, value: FormState[K]) => setForm((f) => ({ ...f, [key]: value }));
+  const canLookup = !!connectors.find((c) => c.key === form.connectorKey)?.lookup;
   const setRow = (i: number, patch: Partial<FieldRow>) => setForm((f) => ({ ...f, fields: f.fields.map((r, j) => (j === i ? { ...r, ...patch } : r)) }));
 
   const categories = [...Object.entries(BILL_CATEGORY_LABEL).map(([value, label]) => ({ value, label })), { value: CUSTOM, label: 'Autre (saisir un code)…' }];
@@ -361,7 +362,14 @@ function BillerDialog({
         </div>
 
         <h3 className="bl-h3">Montant et frais</h3>
-        <SelectField id="bl-mode" label="Montant" value={form.amountMode} options={(Object.keys(BILL_AMOUNT_MODE_LABEL) as BillAmountMode[]).map((k) => ({ value: k, label: BILL_AMOUNT_MODE_LABEL[k] }))} onChange={(e) => set('amountMode', e.target.value as BillAmountMode)} />
+        <SelectField
+          id="bl-mode"
+          label="Montant"
+          value={form.amountMode}
+          options={(Object.keys(BILL_AMOUNT_MODE_LABEL) as BillAmountMode[]).filter((k) => k === 'FREE' || canLookup).map((k) => ({ value: k, label: BILL_AMOUNT_MODE_LABEL[k] }))}
+          hint={canLookup ? 'Avec « montant fourni par le facturier », le client saisit son numéro et le montant s\'affiche automatiquement.' : 'Ce mode de règlement ne permet pas d\'interroger la facture à l\'avance : le client saisit lui-même le montant. Le montant automatique demande une connexion API avec le facturier.'}
+          onChange={(e) => set('amountMode', e.target.value as BillAmountMode)}
+        />
         <div className="bl-row">
           <Field id="bl-min" label="Minimum" inputMode="decimal" value={form.minAmount} error={errors.minAmount} onChange={(e) => set('minAmount', e.target.value)} />
           <Field id="bl-max" label="Maximum" inputMode="decimal" value={form.maxAmount} error={errors.maxAmount} onChange={(e) => set('maxAmount', e.target.value)} />
@@ -372,7 +380,11 @@ function BillerDialog({
         </div>
 
         <h3 className="bl-h3">Règlement et partenariat</h3>
-        <SelectField id="bl-conn" label="Mode de règlement" value={form.connectorKey} options={connectors.map((c) => ({ value: c.key, label: c.label }))} onChange={(e) => set('connectorKey', e.target.value)} />
+        <SelectField id="bl-conn" label="Mode de règlement" value={form.connectorKey} options={connectors.map((c) => ({ value: c.key, label: c.label }))} onChange={(e) => {
+          const key = e.target.value;
+          // Un connecteur qui ne sait pas interroger la facture ne peut pas fournir le montant : retour au montant libre.
+          setForm((f) => ({ ...f, connectorKey: key, amountMode: connectors.find((c) => c.key === key)?.lookup ? f.amountMode : 'FREE' }));
+        }} />
         <Field id="bl-delay" label="Délai de règlement annoncé au client (heures)" inputMode="numeric" value={form.settlementDelayHours} error={errors.settlementDelayHours} onChange={(e) => set('settlementDelayHours', e.target.value)} />
         <SelectField id="bl-part" label="Partenariat" value={form.partnershipStatus} options={(Object.keys(BILL_PARTNERSHIP_LABEL) as BillPartnership[]).map((k) => ({ value: k, label: BILL_PARTNERSHIP_LABEL[k] }))} onChange={(e) => set('partnershipStatus', e.target.value as BillPartnership)} />
         <TextAreaField id="bl-settle" label="Coordonnées de règlement (jamais vues des clients)" hint="Compte à créditer, référence de convention, contact du facturier…" value={form.settlementInfo} maxLength={600} onChange={(e) => set('settlementInfo', e.target.value)} />
@@ -410,7 +422,7 @@ function RemoveDialog({ biller, onClose, onDone }: { biller: BillerAdmin; onClos
 export default function BillersPage() {
   const [billers, setBillers] = useState<BillerAdmin[] | null>(null);
   const [view, setView] = useState<CompanySettingsView | null>(null);
-  const [connectors, setConnectors] = useState<Array<{ key: string; label: string; automatic: boolean }>>([{ key: 'manual', label: 'Manuel (vous réglez puis confirmez)', automatic: false }]);
+  const [connectors, setConnectors] = useState<Array<{ key: string; label: string; automatic: boolean; lookup: boolean }>>([{ key: 'manual', label: 'Manuel (vous réglez puis confirmez)', automatic: false, lookup: false }]);
   const [error, setError] = useState<unknown>(null);
   const [message, setMessage] = useState<string | null>(null);
   const [dialog, setDialog] = useState<{ kind: 'edit'; biller: BillerAdmin | null } | { kind: 'remove'; biller: BillerAdmin } | null>(null);
