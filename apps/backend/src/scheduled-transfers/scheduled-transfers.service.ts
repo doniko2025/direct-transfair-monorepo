@@ -139,6 +139,8 @@ export class ScheduledTransfersService {
         frequency: dto.frequency,
         status: ScheduledStatus.ACTIVE,
         nextExecutionAt: startDate,
+        // Mensuel : le jour de la date de départ est conservé (31 → 28 en février, puis de nouveau 31 en mars).
+        anchorDay: dto.frequency === 'MONTHLY' ? startDate.getDate() : null,
         maxExecutions: dto.maxExecutions ?? null,
       },
       include: { beneficiary: true },
@@ -184,9 +186,14 @@ export class ScheduledTransfersService {
     if (transfer.status !== ScheduledStatus.PAUSED) {
       throw new BadRequestException('Seul un virement PAUSED peut être repris');
     }
+    // ✅ audit logique — une reprise ne rejoue PAS les échéances manquées pendant la pause : sans cela, un virement quotidien suspendu
+    // 30 jours partait 30 fois de suite (une exécution tous les 5 minutes, chacune avec sa propre clé d'idempotence).
+    const next = transfer.frequency === 'ONCE'
+      ? transfer.nextExecutionAt
+      : (this.nextOccurrenceAfter(transfer.nextExecutionAt, transfer.frequency, new Date(), true, transfer.anchorDay) ?? transfer.nextExecutionAt);
     const updated = await this.prisma.scheduledTransfer.update({
       where: { id },
-      data: { status: ScheduledStatus.ACTIVE },
+      data: { status: ScheduledStatus.ACTIVE, nextExecutionAt: next, failureCount: 0, failureReason: null },
     });
     return this.serialize(updated);
   }
@@ -194,6 +201,9 @@ export class ScheduledTransfersService {
   async cancel(id: string, userId: string) {
     const transfer = await this.prisma.scheduledTransfer.findFirst({ where: { id, userId } });
     if (!transfer) throw new NotFoundException('Introuvable');
+    if (transfer.status === ScheduledStatus.COMPLETED || transfer.status === ScheduledStatus.CANCELLED) {
+      throw new BadRequestException('Ce virement est déjà terminé ou annulé.');
+    }
     const updated = await this.prisma.scheduledTransfer.update({
       where: { id },
       data: { status: ScheduledStatus.CANCELLED },
@@ -293,7 +303,7 @@ export class ScheduledTransfersService {
       sendCreated = true;
 
       // Avancement de l'échéance : un seul passage gagne (statut ACTIVE + échéance lue).
-      const nextDate = this.calculateNextDate(transfer.nextExecutionAt, transfer.frequency);
+      const nextDate = this.nextOccurrenceAfter(transfer.nextExecutionAt, transfer.frequency, new Date(), false, transfer.anchorDay);
       const newCount = (transfer.executionCount ?? 0) + 1;
       const isDone =
         transfer.frequency === 'ONCE' ||
@@ -371,7 +381,7 @@ export class ScheduledTransfersService {
           status: shouldPause ? ScheduledStatus.FAILED : ScheduledStatus.ACTIVE,
           nextExecutionAt: shouldPause
             ? transfer.nextExecutionAt
-            : (this.calculateNextDate(transfer.nextExecutionAt, transfer.frequency) ?? transfer.nextExecutionAt),
+            : (this.nextOccurrenceAfter(transfer.nextExecutionAt, transfer.frequency, new Date(), false, transfer.anchorDay) ?? transfer.nextExecutionAt),
         },
       });
 
@@ -385,7 +395,28 @@ export class ScheduledTransfersService {
     }
   }
 
-  private calculateNextDate(current: Date, frequency: ScheduledFrequency): Date | null {
+  /**
+   * Première échéance STRICTEMENT postérieure à `now` (ou à `current` avec `fromCurrent`, jamais moins d'un pas) : les échéances
+   * manquées (pause, panne du serveur) sont sautées au lieu d'être rattrapées une par une. Borné pour ne jamais boucler.
+   */
+  private nextOccurrenceAfter(current: Date, frequency: ScheduledFrequency, now: Date, fromCurrent = false, anchorDay?: number | null): Date | null {
+    let next = this.calculateNextDate(current, frequency, anchorDay);
+    if (!next) return null;
+    for (let i = 0; i < 800 && next.getTime() <= now.getTime(); i++) {
+      const following = this.calculateNextDate(next, frequency, anchorDay);
+      if (!following) break;
+      next = following;
+    }
+    // Reprise : si l'échéance enregistrée est encore dans le futur, on la garde telle quelle.
+    if (fromCurrent && current.getTime() > now.getTime()) return current;
+    return next;
+  }
+
+  /**
+   * Échéance suivante. MONTHLY : `anchorDay` (jour d'origine) prime sur le jour de `current`, qui a pu être raccourci par un mois court
+   * (31 janv. → 28 févr. → 31 mars). Sans ancre (anciens virements), on part du jour de `current`, comme avant.
+   */
+  private calculateNextDate(current: Date, frequency: ScheduledFrequency, anchorDay?: number | null): Date | null {
     if (frequency === 'ONCE') return null;
     const next = new Date(current);
     switch (frequency) {
@@ -393,7 +424,7 @@ export class ScheduledTransfersService {
       case 'WEEKLY':   next.setDate(next.getDate() + 7);   break;
       case 'BIWEEKLY': next.setDate(next.getDate() + 14);  break;
       case 'MONTHLY': {
-        const day = next.getDate();
+        const day = anchorDay && anchorDay >= 1 && anchorDay <= 31 ? anchorDay : next.getDate();
         next.setDate(1);                      // évite le débordement pendant le changement de mois
         next.setMonth(next.getMonth() + 1);
         const lastDay = new Date(next.getFullYear(), next.getMonth() + 1, 0).getDate();

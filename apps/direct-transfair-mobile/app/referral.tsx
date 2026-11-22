@@ -180,7 +180,7 @@ export default function ReferralScreen() {
           </View>
           {bonusText ? (
             <Notice tone="accent" style={{ marginTop: 10 }}>
-              {program && program.minFirstTransfer > 0 ? `${bonusText} ${t("grw.ref.ruleMin", { amount: `${fmtMoney(program.minFirstTransfer, (user as any)?.primaryCurrency)} ${(user as any)?.primaryCurrency ?? ""}`.trim() })}` : bonusText}
+              {program && program.minFirstTransfer > 0 ? `${bonusText} ${t("grw.ref.ruleMin", { amount: `${fmtMoney(program.minFirstTransfer, program.minFirstTransferCurrency ?? undefined)} ${program.minFirstTransferCurrency ?? ""}`.trim() })}` : bonusText}
             </Notice>
           ) : (
             <Notice tone="accent" style={{ marginTop: 10 }}>{t("grw.ref.inactive")}</Notice>

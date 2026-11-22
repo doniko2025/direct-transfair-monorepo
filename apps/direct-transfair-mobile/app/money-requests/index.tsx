@@ -2,6 +2,8 @@
 // =========================================================
 // DEMANDES D'ARGENT — liste (lot 16)
 // ✅ v1.1 : montants réduits (22 au lieu de 30), carte et avatar resserrés, barre du haut et bouton compacts (échelle de l'accueil).
+// ✅ v1.4 : « Payer » LIE l'envoi à la demande (requestId) : seul cet envoi la règle (plus de rapprochement au hasard côté serveur).
+// ✅ v1.3 : « Payer » dans une autre devise pré-remplit le montant que la personne doit RECEVOIR (plus d'équivalent à deviner).
 // ✅ v1.2 : une demande RÉGLÉE affiche ce qui a réellement circulé (reçu / envoyé), pas le montant demandé ; « Demandé : … » en rappel
 //          quand les deux diffèrent, et un lien vers le détail du transfert.
 // Onglets « Reçues » / « Envoyées ». Une demande reçue se règle en un geste : « Payer » ouvre l'envoi avec le destinataire
@@ -23,6 +25,7 @@ import { Avatar, Button, Card, EmptyView, ErrorView, NavBar, Notice, Pill, Scree
 import { fmtMoney } from "../../utils/amount";
 import { fmtDate } from "../../i18n/runtime";
 import type { MessageKey } from "../../i18n/catalog";
+import { userCurrency } from "../../utils/currency";
 
 const TONE: Record<MoneyRequestStatus, "warn" | "pos" | "danger" | "neutral"> = {
   PENDING: "warn", PAID: "pos", DECLINED: "danger", CANCELLED: "neutral", EXPIRED: "neutral",
@@ -93,19 +96,19 @@ export default function MoneyRequestsScreen() {
   const [tab, setTab] = useState<"received" | "sent">("received");
   const [busyId, setBusyId] = useState<string | null>(null);
   const [problem, setProblem] = useState<string | null>(null);
-  const myCurrency = (user as any)?.primaryCurrency || (user as any)?.currency || "XOF";
+  const myCurrency = userCurrency(user);
 
   const { data, status, error, refreshing, slow, reload, refresh } = useLoader<MoneyRequestsOverview>(() => api.getMoneyRequests());
 
   const list = useMemo(() => (data ? (tab === "received" ? data.received : data.sent) : []), [data, tab]);
 
   const pay = (r: MoneyRequestView) => {
-    // Le montant n'est pré-rempli que s'il est dans votre devise : sinon c'est à vous de saisir l'équivalent.
+    // Même devise : le montant à envoyer est pré-rempli. Devise différente : c'est le montant que la personne doit RECEVOIR qui est
+    // pré-rempli (l'envoi est calculé au taux), au lieu de laisser le payeur deviner l'équivalent.
     const sameCurrency = r.currency === myCurrency;
-    if (!sameCurrency) Alert.alert(t("grw.mr.pay"), t("grw.mr.otherCurrency", { currency: r.currency }));
     router.push({
       pathname: "/(tabs)/send",
-      params: { mode: "WALLET", ...(r.counterpartPhone ? { phone: r.counterpartPhone } : {}), ...(sameCurrency ? { amount: String(r.amount) } : {}) },
+      params: { mode: "WALLET", requestId: r.id, ...(r.counterpartPhone ? { phone: r.counterpartPhone } : {}), ...(sameCurrency ? { amount: String(r.amount) } : { receivedAmount: String(r.amount) }) },
     } as any);
   };
 

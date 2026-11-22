@@ -20,6 +20,7 @@ import { isKycRequired, kycRequiredMessage, KYC_SCREEN } from "../../utils/kycGa
 import { decimalsFor, parseAmount, roundTo } from "../../utils/amount";
 import { useAuth } from "../../providers/AuthProvider";
 import { useT } from "../../providers/I18nProvider";
+import { userCurrency } from "../../utils/currency";
 
 /** Clé unique d'UNE confirmation (8 à 80 caractères) : le serveur ignore tout rejeu avec la même clé. */
 const newKey = () => `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 12)}${Math.random().toString(36).slice(2, 8)}`;
@@ -83,8 +84,8 @@ export default function PayBillScreen() {
     return () => { alive = false; };
   }, [params.id]);
 
-  const currency = biller?.currency ?? user?.primaryCurrency ?? "XOF";
-  const walletCcy = walletCurrency ?? (user?.primaryCurrency as string | undefined) ?? currency;
+  const currency = biller?.currency ?? userCurrency(user);
+  const walletCcy = walletCurrency ?? userCurrency(user);
   const fixed = biller?.amountMode === "FROM_LOOKUP";
   const amount = useMemo(
     () => (fixed ? roundTo(lookup?.amountDue ?? 0, decimalsFor(currency)) : roundTo(parseAmount(amountText), decimalsFor(currency))),

@@ -21,6 +21,7 @@ import { AmountInput, Button, Card, ErrorView, NavBar, Notice, Screen, SkeletonR
 import { Rise, apiProblem, categoryLabel, money, parseMerchantQr } from "../../components/merchant/merchantUi";
 import { useT } from "../../providers/I18nProvider";
 import { decimalsFor, parseAmount, roundTo } from "../../utils/amount";
+import { userCurrency } from "../../utils/currency";
 
 /** Temps laissé au client pour saisir son code secret après avoir choisi le montant. */
 const STATIC_CHECKOUT_SECONDS = 180;
@@ -52,7 +53,7 @@ export default function PayConfirmScreen() {
   const finish = () => router.replace("/(tabs)/home" as any);
 
   const isStatic = !!view?.staticQr;
-  const currency = view?.currency ?? user?.primaryCurrency ?? "XOF";
+  const currency = view?.currency ?? userCurrency(user);
   const amount = useMemo(() => roundTo(parseAmount(amountText), decimalsFor(currency)), [amountText, currency]);
   const min = view?.minAmount ?? null;
   const max = view?.maxAmount ?? null;

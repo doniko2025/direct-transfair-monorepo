@@ -153,6 +153,7 @@ import { PrismaService }  from '../prisma/prisma.service';
 import { extractTransferReceiptCode, verifyTransferSeal } from '../transactions/transfer-receipt-seal'; // paiement par scan du reçu
 import { WalletsService } from '../wallets/wallets.service';
 import { TransactionsService } from '../transactions/transactions.service';
+import { rewardReferrerOnFirstTransfer } from '../growth/growth.core'; // lot 16 — parrainage : récompense au paiement du code
 import { toIso2 } from '../fee-schedule/countries';
 import { assertNotOwnSend, assertPayableInCountry, destinationCountryOf, isPickupExpired } from '../transactions/pickup-rules';
 import { RatesService }   from '../rates/rates.service';
@@ -722,6 +723,14 @@ export class WithdrawalsService {
 
     // ✅ v4.16 — paiement réussi : la série d'essais ratés de l'agent repart à zéro.
     await this.recordAttempt(clientId, agentId, true, '', opts.ip);
+
+    // ✅ audit logique (lot 16) — le premier envoi cash d'un filleul est enfin PAYÉ : le parrain peut être récompensé (jamais bloquant).
+    if (tx.senderId && tx.type === TransactionType.TRANSFER && !tx.agencyId) {
+      void rewardReferrerOnFirstTransfer(this.prisma, {
+        clientId, senderId: tx.senderId, transactionId: tx.id, amount: Number(tx.amount), currency: String(tx.currency),
+        convert: (a, from, to) => this.ratesService.convert(a, from, to, clientId),
+      });
+    }
 
     // =========================================================
     // ✅ v4.8 — NOTIFICATIONS POST-TRANSACTION (non-bloquant)

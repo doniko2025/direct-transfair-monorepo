@@ -20,13 +20,14 @@ import { AmountInput, Button, Card, Field, NavBar, Notice, PhoneInput, Screen, U
 import { Ionicons } from "../../components/ui/Icon";
 import { decimalsFor, parseAmount, roundTo, sanitizeAmountInput } from "../../utils/amount";
 import { useUI } from "../../components/ui";
+import { userCurrency } from "../../utils/currency";
 
 export default function NewMoneyRequestScreen() {
   const t = useT();
   const router = useRouter();
   const { C } = useUI();
   const { user } = useAuth();
-  const currency: string = (user as any)?.primaryCurrency || (user as any)?.currency || "XOF";
+  const currency: string = userCurrency(user);
   const d = decimalsFor(currency);
 
   const [dial, setDial] = useState<AuthCountry>(findCountry((user as any)?.country ?? "") ?? findCountry("France") ?? AUTH_COUNTRIES[0]!);

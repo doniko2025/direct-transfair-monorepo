@@ -1,7 +1,8 @@
-import { attachReferral, consumeRateLock, consumeWaiver, findUsableWaiver, resolveRateLock, rewardReferrerOnFirstTransfer } from './growth.core';
+import { attachReferral, consumeRateLock, consumeWaiver, findUsableWaiver, resolveRateLock, rewardReferrerOnFirstTransfer, settleLinkedMoneyRequest } from './growth.core';
 
 /** Mini base en mémoire : juste ce dont growth.core a besoin. */
-function fakeDb(seed: { users?: any[]; rewards?: any[]; locks?: any[]; config?: any; transactions?: any[] } = {}) {
+function fakeDb(seed: { users?: any[]; rewards?: any[]; locks?: any[]; config?: any; transactions?: any[]; requests?: any[]; refCurrency?: string } = {}) {
+  const requests = seed.requests ?? [];
   const users = seed.users ?? [];
   const rewards = seed.rewards ?? [];
   const locks = seed.locks ?? [];
@@ -21,7 +22,7 @@ function fakeDb(seed: { users?: any[]; rewards?: any[]; locks?: any[]; config?: 
       return row[k] === v;
     });
   const db: any = {
-    users, rewards, locks, notifications,
+    users, rewards, locks, notifications, requests,
     referralConfig: { findUnique: async () => seed.config ?? null },
     user: {
       findFirst: async ({ where }: any) => users.find((u) => match(u, where)) ?? null,
@@ -41,6 +42,11 @@ function fakeDb(seed: { users?: any[]; rewards?: any[]; locks?: any[]; config?: 
         rows.forEach((r) => { for (const [k, v] of Object.entries<any>(data)) { if (v && typeof v === 'object' && 'decrement' in v) r[k] -= v.decrement; else r[k] = v; } });
         return { count: rows.length };
       },
+    },
+    client: { findUnique: async () => ({ defaultCurrency: seed.refCurrency ?? 'EUR' }) },
+    moneyRequest: {
+      findFirst: async ({ where }: any) => requests.find((r) => match(r, where)) ?? null,
+      updateMany: async ({ where, data }: any) => { const rows = requests.filter((r) => match(r, where)); rows.forEach((r) => Object.assign(r, data)); return { count: rows.length }; },
     },
     notification: { create: async ({ data }: any) => { notifications.push(data); return data; } },
     transaction: { count: async ({ where }: any) => transactions.filter((t) => match(t, where)).length },
@@ -153,6 +159,32 @@ describe('récompense du parrain', () => {
     expect(db.rewards).toHaveLength(1);
   });
 
+  it('le minimum s\'exprime dans la devise de la société : l\'envoi d\'une autre devise y est converti avant comparaison', async () => {
+    // minimum 20 EUR ; 50 000 GNF ≈ 4,77 EUR → trop bas ; 500 000 GNF ≈ 47,7 EUR → suffisant
+    const convert = async (a: number) => a / 10_479;
+    const low = fakeDb({ users: users(), config: cfg, refCurrency: 'EUR' });
+    await rewardReferrerOnFirstTransfer(low, { clientId: 1, senderId: 'f', transactionId: 't1', amount: 50_000, currency: 'GNF', convert, now });
+    expect(low.rewards).toHaveLength(0);
+    const ok = fakeDb({ users: users(), config: cfg, refCurrency: 'EUR' });
+    await rewardReferrerOnFirstTransfer(ok, { clientId: 1, senderId: 'f', transactionId: 't1', amount: 500_000, currency: 'GNF', convert, now });
+    expect(ok.rewards).toHaveLength(1);
+  });
+
+  it('même devise que la société : comparé tel quel ; devise différente sans conversion possible : pas de récompense', async () => {
+    const same = fakeDb({ users: users(), config: cfg, refCurrency: 'EUR' });
+    await rewardReferrerOnFirstTransfer(same, { clientId: 1, senderId: 'f', transactionId: 't1', amount: 25, currency: 'EUR', now });
+    expect(same.rewards).toHaveLength(1);
+    const noRate = fakeDb({ users: users(), config: cfg, refCurrency: 'EUR' });
+    await rewardReferrerOnFirstTransfer(noRate, { clientId: 1, senderId: 'f', transactionId: 't1', amount: 500_000, currency: 'GNF', now });
+    expect(noRate.rewards).toHaveLength(0);
+  });
+
+  it('un envoi seulement EN ATTENTE auparavant ne bloque pas : seul un envoi déjà PAYÉ fait que ce n\'est plus le premier', async () => {
+    const db = fakeDb({ users: users(), config: cfg, transactions: [{ id: 't0', senderId: 'f', type: 'TRANSFER', status: 'PENDING', deletedAt: null }] });
+    await rewardReferrerOnFirstTransfer(db, { clientId: 1, senderId: 'f', transactionId: 't1', amount: 50, now });
+    expect(db.rewards).toHaveLength(1);
+  });
+
   it('respecte le plafond mensuel du parrain', async () => {
     const u = users(); u.push({ id: 'f2', clientId: 1, isActive: true, referredById: 'p', firstName: 'Deux' });
     const db = fakeDb({ users: u, config: cfg });
@@ -185,5 +217,39 @@ describe('garantie de taux', () => {
     expect(db.locks[0].transactionId).toBe('t1');
     await expect(consumeRateLock(db, 'L1', 't2', now)).rejects.toThrow(/déjà servi/);
     await expect(resolveRateLock(db, ask)).rejects.toThrow(/déjà servi/);
+  });
+});
+
+describe('demande d\'argent réglée par l\'envoi qui lui est lié', () => {
+  const request = (over: any = {}) => ({
+    id: 'r1', clientId: 1, requesterId: 'req', payerId: 'pay', amount: 5_000, currency: 'GNF', status: 'PENDING',
+    createdAt: new Date('2026-11-22T00:00:00Z'), expiresAt: new Date('2026-11-29T00:00:00Z'), paidTransactionId: null, respondedAt: null, ...over,
+  });
+  const tx = { id: 't1', currency: 'EUR', amount: 4.77, targetCurrency: 'GNF', receivedAmount: 49_985 };
+  const at = new Date('2026-11-22T00:19:00Z');
+  const run = (db: any, over: any = {}) => settleLinkedMoneyRequest(db, { requestId: 'r1', clientId: 1, payerId: 'pay', requesterId: 'req', transaction: tx, now: at, ...over });
+
+  it('règle la demande liée, et rapporte le montant réellement reçu (supérieur au montant demandé)', async () => {
+    const db = fakeDb({ requests: [request()] });
+    const res = await run(db);
+    expect(res).toMatchObject({ id: 'r1', requesterId: 'req', asked: 5_000, got: 49_985, currency: 'GNF', transactionId: 't1' });
+    expect(db.requests[0]).toMatchObject({ status: 'PAID', paidTransactionId: 't1' });
+  });
+
+  it('ne règle rien : mauvais payeur, mauvais destinataire, autre société, demande échue, déjà réglée, montant insuffisant', async () => {
+    for (const [over, label] of [
+      [{ payerId: 'autre' }, 'payeur'], [{ requesterId: 'autre' }, 'destinataire'], [{ clientId: 2 }, 'société'],
+      [{ now: new Date('2026-12-01T00:00:00Z') }, 'échue'], [{ transaction: { ...tx, receivedAmount: 4_000 } }, 'insuffisant'],
+    ] as Array<[any, string]>) {
+      const db = fakeDb({ requests: [request()] });
+      expect(await run(db, over)).toBeNull();
+      expect({ label, status: db.requests[0].status }).toEqual({ label, status: 'PENDING' });
+    }
+    const paid = fakeDb({ requests: [request({ status: 'PAID' })] });
+    expect(await run(paid)).toBeNull();
+  });
+
+  it('une demande inconnue n\'est pas un problème : l\'envoi reste un envoi normal', async () => {
+    expect(await run(fakeDb(), { requestId: 'nope' })).toBeNull();
   });
 });

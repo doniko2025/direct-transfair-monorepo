@@ -1618,6 +1618,9 @@ model ScheduledTransfer {
   lastExecutedAt  DateTime?
   executionCount  Int @default(0)
   maxExecutions   Int? // null = illimité
+  /// Jour du mois voulu pour un virement MENSUEL (celui de la date de départ). Sans lui, un 31 janvier devenait le 28 février PUIS le 28 tous
+  /// les mois : le jour d'origine est conservé et chaque mois retombe sur lui (ou sur son dernier jour). Null = anciens virements.
+  anchorDay       Int?
 
   failureReason String?
   failureCount  Int @default(0)

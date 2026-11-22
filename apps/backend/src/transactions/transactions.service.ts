@@ -320,7 +320,7 @@ import { TransferLimitsService } from '../transfer-limits/transfer-limits.servic
 import { KycGuardService } from '../kyc/kyc-guard.service'; // lot 7 — pas d'opération sortante sans identité vérifiée
 import { CounterCustomersService, type ResolvedCounterCustomer } from '../kyc/counter-customers.service'; // lot 7 — expéditeur de passage
 import { roundToCurrency } from '../fee-schedule/fee-engine';
-import { consumeRateLock, consumeWaiver, findUsableWaiver, resolveRateLock, rewardReferrerOnFirstTransfer, type LockedRate, type UsableReward } from '../growth/growth.core'; // lot 16 — garantie de taux + parrainage
+import { consumeRateLock, consumeWaiver, findUsableWaiver, resolveRateLock, rewardReferrerOnFirstTransfer, settleLinkedMoneyRequest, settledRequestMessage, type LockedRate, type SettledRequest, type UsableReward } from '../growth/growth.core'; // lot 16 — garantie de taux + parrainage
 import { findIdempotent, isIdempotencyConflict } from './idempotency';
 import { addMonths, pickupExpiryFrom, pickupValidityMonths } from './pickup-rules';
 import { CompanySettingsService } from '../company-settings/company-settings.service';
@@ -1614,6 +1614,9 @@ export class TransactionsService {
       : null;
 
     let transaction: Transaction;
+    // ✅ lot 16 — demande d'argent réglée PAR cet envoi (lien explicite moneyRequestId), enregistrée dans la même transaction SQL.
+    let settledRequest: SettledRequest | null = null;
+    const moneyRequestId = (dto as { moneyRequestId?: string }).moneyRequestId;
     try {
     transaction = await this.prisma.$transaction(async (tx) => {
       const created = await tx.transaction.create({
@@ -1688,6 +1691,13 @@ export class TransactionsService {
         );
       }
 
+      if (moneyRequestId && recipientUser?.id && !counter && txType === TransactionType.TRANSFER) {
+        settledRequest = await settleLinkedMoneyRequest(tx, {
+          requestId: moneyRequestId, clientId, payerId: senderId, requesterId: recipientUser.id,
+          transaction: { id: created.id, currency: String(currency), amount: Number(amount), targetCurrency: String(targetCurrency), receivedAmount: convertedAmount },
+        });
+      }
+
       return created;
     });
     } catch (e) {
@@ -1720,9 +1730,27 @@ export class TransactionsService {
       await screenTransaction(this.prisma, transaction.id);
     });
 
+    // ✅ lot 16 — demande d'argent réglée par cet envoi : le demandeur est prévenu tout de suite, avec le montant réellement reçu.
+    // (Jamais bloquant : l'argent a déjà bougé.)
+    if (settledRequest) {
+      const s = settledRequest as SettledRequest;
+      this.fireAndForget('Notification demande d\'argent réglée', async () => {
+        const body = settledRequestMessage(s);
+        await this.prisma.notification.create({
+          data: { userId: s.requesterId, title: 'Demande réglée ✅', message: body, type: 'INFO', channels: ['IN_APP', 'PUSH'], priority: 'NORMAL', actionUrl: '/money-requests', groupKey: 'growth', space: 'client', metadata: { kind: 'MONEY_REQUEST_PAID' } },
+        }).catch(() => undefined);
+        await this.push.sendToUser(s.requesterId, { title: 'Demande réglée ✅', body, data: { type: 'GROWTH', kind: 'MONEY_REQUEST_PAID', space: 'client', actionUrl: '/money-requests' } }).catch(() => undefined);
+      });
+    }
+
     // ✅ lot 16 — premier envoi d'un filleul : son parrain gagne un envoi sans frais (jamais bloquant, jamais attendu).
-    if (!counter && txType === TransactionType.TRANSFER) {
-      this.fireAndForget('Récompense parrain', () => rewardReferrerOnFirstTransfer(this.prisma, { clientId, senderId, transactionId: transaction.id, amount: Number(amount) }));
+    // ✅ audit logique — seulement si l'envoi est déjà PAYÉ (envoi vers un portefeuille). Un envoi cash en attente ne rapporte rien : la
+    // récompense est donnée au paiement du code en agence (WithdrawalsService).
+    if (!counter && txType === TransactionType.TRANSFER && status === TransactionStatus.PAID) {
+      this.fireAndForget('Récompense parrain', () => rewardReferrerOnFirstTransfer(this.prisma, {
+        clientId, senderId, transactionId: transaction.id, amount: Number(amount), currency: String(currency),
+        convert: (a, from, to) => this.ratesService.convert(a, from, to, clientId),
+      }));
     }
 
     // ✅ v4.19 — nom du destinataire direct en repli si pas de Beneficiary

@@ -3,9 +3,9 @@
 import 'reflect-metadata';
 import { ScheduledTransfersService } from './scheduled-transfers.service';
 
-const next = (iso: string, frequency = 'MONTHLY') => {
+const next = (iso: string, frequency = 'MONTHLY', anchorDay?: number) => {
   const service: any = Object.create(ScheduledTransfersService.prototype);
-  return service.calculateNextDate(new Date(iso), frequency) as Date | null;
+  return service.calculateNextDate(new Date(iso), frequency, anchorDay) as Date | null;
 };
 const ymd = (d: Date | null) => (d ? `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}` : null);
 
@@ -29,5 +29,22 @@ describe('ScheduledTransfersService.calculateNextDate — MONTHLY', () => {
     expect(ymd(next('2027-01-31T12:00:00', 'DAILY'))).toBe('2027-02-01');
     expect(ymd(next('2027-01-31T12:00:00', 'WEEKLY'))).toBe('2027-02-07');
     expect(next('2027-01-31T12:00:00', 'ONCE')).toBeNull();
+  });
+});
+
+describe('MONTHLY — jour d\'ancrage', () => {
+  it('un virement du 31 retombe sur le 31 dès que le mois le permet (31 janv. → 28 févr. → 31 mars → 30 avr. → 31 mai)', () => {
+    const service: any = Object.create(ScheduledTransfersService.prototype);
+    let d: Date = new Date('2027-01-31T12:00:00');
+    const seen: (string | null)[] = [];
+    for (let i = 0; i < 4; i++) { d = service.calculateNextDate(d, 'MONTHLY', 31) as Date; seen.push(ymd(d)); }
+    expect(seen).toEqual(['2027-02-28', '2027-03-31', '2027-04-30', '2027-05-31']);
+  });
+  it('sans ancre (anciens virements), le jour de l\'échéance courante sert de base, comme avant', () => {
+    expect(ymd(next('2027-02-28T12:00:00'))).toBe('2027-03-28');
+  });
+  it('une ancre invalide est ignorée', () => {
+    expect(ymd(next('2027-01-15T12:00:00', 'MONTHLY', 0))).toBe('2027-02-15');
+    expect(ymd(next('2027-01-15T12:00:00', 'MONTHLY', 45))).toBe('2027-02-15');
   });
 });

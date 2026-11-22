@@ -22,6 +22,7 @@ import { fmtMoney } from "../../utils/amount";
 import { useUI } from "../ui";
 import { Text } from "../ui/Text";
 import { Ionicons } from "../ui/Icon";
+import { userCurrency } from "../../utils/currency";
 
 if (Platform.OS === "android" && (UIManager as any).setLayoutAnimationEnabledExperimental) {
   try { (UIManager as any).setLayoutAnimationEnabledExperimental(true); } catch { /* sans effet */ }
@@ -83,7 +84,7 @@ export default function RequestEnvelope() {
   const router = useRouter();
   const { C } = useUI();
   const { user } = useAuth();
-  const myCurrency: string = (user as any)?.primaryCurrency || (user as any)?.currency || "XOF";
+  const myCurrency: string = userCurrency(user);
 
   const [items, setItems] = useState<MoneyRequestView[]>([]);
   const [open, setOpen] = useState(false);
@@ -146,7 +147,7 @@ export default function RequestEnvelope() {
     markSeen(items.map((r) => r.id));
     router.push({
       pathname: "/(tabs)/send",
-      params: { mode: "WALLET", ...(first.counterpartPhone ? { phone: first.counterpartPhone } : {}), ...(sameCurrency ? { amount: String(first.amount) } : {}) },
+      params: { mode: "WALLET", requestId: first.id, ...(first.counterpartPhone ? { phone: first.counterpartPhone } : {}), ...(sameCurrency ? { amount: String(first.amount) } : { receivedAmount: String(first.amount) }) },
     } as any);
   };
   const toggle = () => { if (!open) markSeen(items.map((r) => r.id)); expand(!open); };

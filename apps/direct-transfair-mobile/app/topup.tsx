@@ -29,6 +29,7 @@ import { AmountInput, Button, Chip, Field, IconButton, Notice, Screen, Tabs, UTe
 import { useT } from "../providers/I18nProvider";
 import { tr, getLocale } from "../i18n/runtime";
 import { formatInternationalInput } from "../utils/phone";
+import { userCurrency } from "../utils/currency";
 
 const QUICK_AMOUNTS = [10, 20, 50, 100, 200, 500];
 
@@ -59,7 +60,7 @@ export default function TopUpScreen() {
   const router = useRouter();
   const params = useLocalSearchParams<{ method?: string }>();
   const { user, refreshUser } = useAuth();
-  const currency = String((user as any)?.currency ?? (user as any)?.primaryCurrency ?? "EUR");
+  const currency = userCurrency(user);
 
   const [amount, setAmount] = useState("50");
   const [loading, setLoading] = useState(false);

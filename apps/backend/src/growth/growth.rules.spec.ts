@@ -62,6 +62,19 @@ describe('demandes d’argent', () => {
     expect(paymentSettlesRequest(gnf, { ...eur, receivedAmount: 400_000 })).toBe(false);
     expect(paidInRequestCurrency(eur, 'XOF')).toBe(0);
   });
+
+  it('un envoi fait APRÈS l\'échéance ne règle pas la demande ; fait avant, il la règle même constaté plus tard', () => {
+    const limited = { ...req, expiresAt: new Date('2026-11-26T09:00:00Z') };
+    expect(paymentSettlesRequest(limited, { ...pay, createdAt: new Date('2026-11-25T10:00:00Z') })).toBe(true);
+    expect(paymentSettlesRequest(limited, { ...pay, createdAt: new Date('2026-11-27T10:00:00Z') })).toBe(false);
+  });
+
+  it('un envoi qui dépasse la demande la règle aussi (le montant réellement reçu reste celui de l\'envoi)', () => {
+    const gnf = { ...req, currency: 'GNF', amount: 5_000 };
+    const eur = { ...pay, currency: 'EUR', amount: 4.77, targetCurrency: 'GNF', receivedAmount: 49_985 };
+    expect(paymentSettlesRequest(gnf, eur)).toBe(true);
+    expect(paidInRequestCurrency(eur, 'GNF')).toBe(49_985);
+  });
 });
 
 describe('parrainage', () => {

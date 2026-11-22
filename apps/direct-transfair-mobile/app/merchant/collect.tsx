@@ -26,6 +26,7 @@ import { AUTH_COUNTRIES, findCountry, type AuthCountry } from "../../components/
 import { apiProblem, money, Rise } from "../../components/merchant/merchantUi";
 import { decimalsFor, parseAmount, roundTo } from "../../utils/amount";
 import { useT } from "../../providers/I18nProvider";
+import { userCurrency } from "../../utils/currency";
 
 export default function CollectScreen() {
   const router = useRouter();
@@ -52,7 +53,7 @@ export default function CollectScreen() {
   });
   const me = ctx?.me ?? null;
   const staff = ctx?.staff ?? null;
-  const currency = staff?.currency ?? user?.primaryCurrency ?? "XOF";
+  const currency = staff?.currency ?? userCurrency(user);
 
   const amount = useMemo(() => roundTo(parseAmount(amountText), decimalsFor(currency)), [amountText, currency]);
   const s = me?.settings;

@@ -68,6 +68,15 @@ export class CreateTransactionDto {
   @MaxLength(40)
   rateLockId?: string;
 
+  /**
+   * Lot 16 — demande d'argent que cet envoi règle (« Payer » dans l'écran des demandes). Le lien est EXPLICITE : aucun envoi n'est plus
+   * rapproché « au hasard » d'une demande. Ignoré sans erreur si la demande n'est pas à régler par cet envoi (autre destinataire, échue…).
+   */
+  @IsOptional()
+  @IsString()
+  @MaxLength(40)
+  moneyRequestId?: string;
+
   @IsOptional()
   @IsString()
   senderPhone?: string;

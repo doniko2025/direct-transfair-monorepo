@@ -211,9 +211,12 @@ export default function TransactionDetailScreen() {
     transaction.targetCurrency !== transaction.currency &&
     toNum(transaction.receivedAmount) > 0;
 
+  // Règle commune (voir describeTx) : le héros montre ce qui a réellement bougé sur le portefeuille — le TOTAL débité (montant + frais)
+  // pour l'expéditeur, le montant reçu pour le destinataire. Le détail (montant principal, frais) est juste en dessous.
+  const debitedTotal = toNum(transaction.total) > 0 ? toNum(transaction.total) : toNum(transaction.amount) + toNum(transaction.fees);
   const heroDisplayAmount   = isConversionIncoming
     ? toNum(transaction.receivedAmount)
-    : toNum(transaction.amount);
+    : isIncoming ? toNum(transaction.amount) : debitedTotal;
   const heroDisplayCurrency = isConversionIncoming
     ? (transaction.targetCurrency as string)
     : (transaction.currency as string);
@@ -261,7 +264,7 @@ export default function TransactionDetailScreen() {
   const dateLabel = fmtDateTime(transaction.createdAt, { day: "2-digit", month: "short", year: "numeric", hour: "2-digit", minute: "2-digit" });
   const totalLabel = isIncoming ? t("txd.totalCredited") : t("txd.totalDebited");
   // total absent ou nul (ancien backend) : montant + frais
-  const totalOrSum = toNum(transaction.total) > 0 ? toNum(transaction.total) : toNum(transaction.amount) + toNum(transaction.fees);
+  const totalOrSum = debitedTotal;
   const totalValue = isIncoming ? heroDisplayAmount : totalOrSum;
   const totalCur = isIncoming ? heroDisplayCurrency : transaction.currency;
 

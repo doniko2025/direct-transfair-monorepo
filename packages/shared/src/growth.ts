@@ -83,7 +83,10 @@ export interface ReferralSettings {
   refereeWaivers: number;
   /** Envois sans frais offerts au parrain au premier envoi de son filleul. */
   referrerWaivers: number;
+  /** Exprimé dans la devise principale de la société (`minFirstTransferCurrency`) : le montant du premier envoi y est converti avant comparaison. */
   minFirstTransfer: number;
+  /** Lecture seule (renvoyée par le serveur) : devise du minimum ci-dessus. */
+  minFirstTransferCurrency?: string | null;
   rewardValidityDays: number;
   maxRewardsPerMonth: number;
 }
@@ -92,7 +95,7 @@ export type ReferralRewardKind = 'REFEREE_WELCOME' | 'REFERRER_BONUS';
 
 export interface MyReferral {
   code: string | null;
-  program: { active: boolean; refereeWaivers: number; referrerWaivers: number; validityDays: number; minFirstTransfer: number };
+  program: { active: boolean; refereeWaivers: number; referrerWaivers: number; validityDays: number; minFirstTransfer: number; minFirstTransferCurrency?: string | null };
   referredCount: number;
   freeTransfersLeft: number;
   nextExpiry: string | null;

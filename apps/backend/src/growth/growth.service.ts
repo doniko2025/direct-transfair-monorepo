@@ -19,10 +19,10 @@ import { SmsService } from '../sms/sms.service';
 import { escapeHtml, platform } from '../common/platform.config';
 import { PrismaService } from '../prisma/prisma.service';
 import { RatesService } from '../rates/rates.service';
-import { loadReferralSettings } from './growth.core';
+import { loadReferralSettings, referralReferenceCurrency } from './growth.core';
 import {
   MAX_OPEN_LOCKS, MAX_OPEN_REQUESTS, REFERRAL_KIND, addDays, addMinutes, applyLockMargin, lockMarginPct, lockMinutes, parseReferralSettings, parseRequestAmount,
-  paidInRequestCurrency, paymentSettlesRequest, requestDays, startOfMonthUtc, type PaymentLike,
+  paidInRequestCurrency, requestDays, startOfMonthUtc,
 } from './growth.rules';
 import type { CreateMoneyRequestDto, QuoteRateLockDto, UpdateReferralConfigDto } from './dto/growth.dto';
 
@@ -188,52 +188,12 @@ export class GrowthService {
     return this.requestView(row, 'SENT', { firstName: payer.firstName, lastName: payer.lastName, phone: payer.phone });
   }
 
-  /** Expire les demandes échues et rapproche celles que l'envoi du payeur a déjà réglées. Idempotent, borné à un utilisateur. */
+  /** Expire les demandes échues. Le règlement, lui, se fait à l'envoi (lien explicite moneyRequestId), plus jamais par rapprochement au hasard. */
   private async refreshRequests(userId: string, now: Date): Promise<void> {
     await this.prisma.moneyRequest.updateMany({
       where: { status: 'PENDING', expiresAt: { lte: now }, OR: [{ payerId: userId }, { requesterId: userId }] },
       data: { status: 'EXPIRED', respondedAt: now },
     });
-
-    const pending = await this.prisma.moneyRequest.findMany({
-      where: { status: 'PENDING', OR: [{ payerId: userId }, { requesterId: userId }] },
-      take: 50,
-    });
-    for (const r of pending) {
-      const candidates = await this.prisma.transaction.findMany({
-        where: {
-          clientId: r.clientId, senderId: r.payerId, recipientId: r.requesterId, status: 'PAID', deletedAt: null,
-          createdAt: { gte: new Date(r.createdAt.getTime() - 1000) },
-        },
-        orderBy: { createdAt: 'asc' },
-        take: 20,
-        select: { id: true, senderId: true, recipientId: true, clientId: true, status: true, currency: true, amount: true, targetCurrency: true, receivedAmount: true, createdAt: true, deletedAt: true },
-      });
-      for (const t of candidates) {
-        const like: PaymentLike = {
-          senderId: t.senderId, recipientId: t.recipientId, clientId: t.clientId, status: t.status, currency: String(t.currency), amount: num(t.amount),
-          targetCurrency: t.targetCurrency ? String(t.targetCurrency) : null, receivedAmount: num(t.receivedAmount), createdAt: t.createdAt, deletedAt: t.deletedAt,
-        };
-        if (!paymentSettlesRequest({ clientId: r.clientId, requesterId: r.requesterId, payerId: r.payerId, amount: num(r.amount), currency: String(r.currency), createdAt: r.createdAt }, like)) continue;
-        // Un envoi ne règle qu'une demande (paidTransactionId est unique).
-        const taken = await this.prisma.moneyRequest.findFirst({ where: { paidTransactionId: t.id }, select: { id: true } });
-        if (taken) continue;
-        const done = await this.prisma.moneyRequest.updateMany({
-          where: { id: r.id, status: 'PENDING' },
-          data: { status: 'PAID', respondedAt: now, paidTransactionId: t.id },
-        });
-        if (done.count > 0) {
-          const got = paidInRequestCurrency(like, String(r.currency));
-          const asked = `${num(r.amount).toLocaleString('fr-FR')} ${r.currency}`;
-          // Le payeur peut avoir envoyé plus que demandé : on annonce ce qui a vraiment été reçu.
-          const body = Math.abs(got - num(r.amount)) < 0.005
-            ? `Votre demande de ${asked} a été réglée.`
-            : `Votre demande de ${asked} a été réglée : vous avez reçu ${got.toLocaleString('fr-FR')} ${r.currency}.`;
-          void this.notify(r.requesterId, 'Demande réglée ✅', body, 'MONEY_REQUEST_PAID', '/money-requests');
-        }
-        break;
-      }
-    }
   }
 
   async listRequests(user: AuthUserPayload) {
@@ -320,16 +280,17 @@ export class GrowthService {
   async myReferral(user: AuthUserPayload) {
     const clientId = this.companyOf(user);
     const now = new Date();
-    const [me, cfg, referred, rewards] = await Promise.all([
+    const [me, cfg, referred, rewards, refCurrency] = await Promise.all([
       this.prisma.user.findUnique({ where: { id: user.id }, select: { referralCode: true } }),
       loadReferralSettings(this.prisma, clientId),
       this.prisma.user.count({ where: { referredById: user.id, clientId } }),
       this.prisma.referralReward.findMany({ where: { userId: user.id }, orderBy: { createdAt: 'desc' }, take: 50 }),
+      referralReferenceCurrency(this.prisma, clientId),
     ]);
     const usable = rewards.filter((r) => r.status === 'AVAILABLE' && r.remaining > 0 && r.expiresAt > now);
     return {
       code: me?.referralCode ?? null,
-      program: { active: cfg.isActive, refereeWaivers: cfg.refereeWaivers, referrerWaivers: cfg.referrerWaivers, validityDays: cfg.rewardValidityDays, minFirstTransfer: cfg.minFirstTransfer },
+      program: { active: cfg.isActive, refereeWaivers: cfg.refereeWaivers, referrerWaivers: cfg.referrerWaivers, validityDays: cfg.rewardValidityDays, minFirstTransfer: cfg.minFirstTransfer, minFirstTransferCurrency: refCurrency },
       referredCount: referred,
       freeTransfersLeft: usable.reduce((s, r) => s + r.remaining, 0),
       nextExpiry: usable.length ? usable.map((r) => r.expiresAt).sort((a, b) => a.getTime() - b.getTime())[0]!.toISOString() : null,
@@ -342,8 +303,14 @@ export class GrowthService {
 
   // ── Parrainage : administrateur de société ──────────────
 
+  /** Réglages + devise dans laquelle s'exprime le premier envoi minimal (devise principale de la société). */
+  private async settingsWithCurrency(clientId: number) {
+    const [settings, minFirstTransferCurrency] = await Promise.all([loadReferralSettings(this.prisma, clientId), referralReferenceCurrency(this.prisma, clientId)]);
+    return { ...settings, minFirstTransferCurrency };
+  }
+
   async getReferralConfig(user: AuthUserPayload) {
-    return loadReferralSettings(this.prisma, this.companyOf(user));
+    return this.settingsWithCurrency(this.companyOf(user));
   }
 
   async updateReferralConfig(user: AuthUserPayload, dto: UpdateReferralConfigDto) {
@@ -362,7 +329,7 @@ export class GrowthService {
     } catch (e) {
       this.logger.error(`Journal d'audit non écrit (REFERRAL_CONFIG) : ${(e as Error).message}`);
     }
-    return next;
+    return { ...next, minFirstTransferCurrency: await referralReferenceCurrency(this.prisma, clientId) };
   }
 
   async referralStats(user: AuthUserPayload) {
@@ -370,7 +337,7 @@ export class GrowthService {
     const now = new Date();
     const monthStart = startOfMonthUtc(now);
     const [config, referredTotal, referredMonth, rewardsByStatus, top, freeUsed] = await Promise.all([
-      loadReferralSettings(this.prisma, clientId),
+      this.settingsWithCurrency(clientId),
       this.prisma.user.count({ where: { clientId, referredById: { not: null } } }),
       this.prisma.user.count({ where: { clientId, referredById: { not: null }, createdAt: { gte: monthStart } } }),
       this.prisma.referralReward.groupBy({ by: ['kind', 'status'], where: { clientId }, _count: { _all: true } }),

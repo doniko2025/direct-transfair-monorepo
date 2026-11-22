@@ -40,6 +40,7 @@ import {
 } from "../components/ui";
 
 import { Text, TextInput } from '../components/ui/Text';
+import { userCurrency } from "../utils/currency";
 // ─── Indicatifs pays ────────────────────────────────────
 const COUNTRY_CODES = [
   { code: "+224", flag: "🇬🇳", name: "Guinée",        country: "GN", currency: "GNF" },
@@ -121,7 +122,7 @@ export default function WalletTransferScreen() {
   const [wallet, setWallet] = useState<{
     currency: string; balance: number; loaded: boolean;
   }>({
-    currency: ((user as any)?.primaryCurrency ?? "XOF") as string,
+    currency: userCurrency(user),
     balance:  0,
     loaded:   false,
   });

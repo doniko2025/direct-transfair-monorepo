@@ -170,7 +170,11 @@ export function describeTx(tx: any, userId?: string): TxView {
     !!tx?.targetCurrency && tx.targetCurrency !== tx.currency && toNum(tx.receivedAmount) > 0;
 
   // Une facture se lit au montant réellement débité (facture + frais), pas au seul montant de la facture.
-  const amount = isBillPay && toNum(tx?.total) > 0 ? toNum(tx.total) : incoming && hasConversion ? toNum(tx.receivedAmount) : toNum(tx?.amount);
+  // RÈGLE COMMUNE d'affichage : une ligne montre ce qui a réellement BOUGÉ sur le portefeuille — le TOTAL débité (montant + frais) pour une
+  // opération sortante (facture, envoi…), le montant effectivement reçu (converti) pour une opération entrante. Avant : les factures
+  // montraient le total, les envois le seul montant (−4,77 € alors que le portefeuille perdait 4,82 €).
+  const total = toNum(tx?.total);
+  const amount = incoming && hasConversion ? toNum(tx.receivedAmount) : !incoming && total > 0 ? total : toNum(tx?.amount);
   const currency = String(incoming && hasConversion ? tx.targetCurrency : tx?.currency ?? '');
 
   const sender = tx?.sender?.firstName

@@ -22,6 +22,7 @@ import { AUTH_COUNTRIES, findCountry, type AuthCountry } from "../../components/
 import { PinPrompt, Rise, apiProblem, money } from "../../components/merchant/merchantUi";
 import { decimalsFor, groupAmount, parseAmount, roundTo } from "../../utils/amount";
 import { useT } from "../../providers/I18nProvider";
+import { userCurrency } from "../../utils/currency";
 
 function Setting({ label, hint, value, onChange }: { label: string; hint?: string; value: boolean; onChange: (v: boolean) => void }) {
   return (
@@ -40,7 +41,7 @@ export default function StaffScreen() {
   const router = useRouter();
   const { user } = useAuth();
   const { C } = useUI();
-  const currency = user?.primaryCurrency ?? "XOF";
+  const currency = userCurrency(user);
   const { data, status, error, reload } = useLoader(() => api.listStaff());
 
   // ── ajout ──

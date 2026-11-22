@@ -109,6 +109,8 @@ export interface RequestLike {
   amount: number;
   currency: string;
   createdAt: Date;
+  /** Échéance de la demande : un envoi fait après ne la règle plus (absent = pas de limite, comportement d'avant). */
+  expiresAt?: Date;
 }
 
 /** Montant reçu par le demandeur dans la devise de la demande (0 si l'envoi ne la couvre pas). */
@@ -127,6 +129,7 @@ export function paymentSettlesRequest(req: RequestLike, p: PaymentLike): boolean
   if (p.clientId !== req.clientId || p.senderId !== req.payerId || p.recipientId !== req.requesterId) return false;
   if (p.status !== 'PAID') return false;
   if (p.createdAt.getTime() < req.createdAt.getTime() - 1000) return false;
+  if (req.expiresAt && p.createdAt.getTime() > req.expiresAt.getTime()) return false;
   return paidInRequestCurrency(p, req.currency) + 1e-6 >= req.amount;
 }
 

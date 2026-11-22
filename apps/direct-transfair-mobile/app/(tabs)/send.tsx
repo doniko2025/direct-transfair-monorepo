@@ -76,6 +76,7 @@ import { SANS } from "../../components/ui/fonts";
 import { useT } from "../../providers/I18nProvider";
 import { tr, fmtDateTime } from "../../i18n/runtime";
 import { MOTIFS, motifLabel } from "../../utils/motifs";
+import { userCurrency as defaultCurrencyOf } from "../../utils/currency";
 
 // Animation de l'échange des deux champs (Android : à activer explicitement ; sans effet si déjà géré par le système).
 if (Platform.OS === "android") {
@@ -446,7 +447,7 @@ export default function SendMoneyScreen() {
   // ✅ v2.8 — Reçu transférable (Wallet & Cash Pickup) ; v7.0 : affiché sur la dernière page du parcours
   const [receiptData,  setReceiptData]  = useState<ReceiptData | null>(null);
 
-  const userCurrency = (user as any)?.primaryCurrency || (user as any)?.currency || "XOF";
+  const userCurrency = defaultCurrencyOf(user);
 
   const [mode,         setMode]        = useState<"WALLET" | "CASH">("WALLET");
   const [chosenMode,   setChosenMode]  = useState<"WALLET" | "CASH" | null>(null);   // v7.3 — montants rapides : 3 pastilles qui remplacent le montant (GNF : 100 000 / 300 000 / 500 000 ; autres devises : les 3 plus envoyés) ; « Comme la dernière fois » supprimé.
@@ -500,6 +501,12 @@ export default function SendMoneyScreen() {
   const pPhone         = firstParam(params.phone);
   const pBeneficiaryId = firstParam(params.beneficiaryId);
   const pAmount        = firstParam(params.amount);
+  // ✅ v7.5 — montant que le DESTINATAIRE doit recevoir (ex. règlement d'une demande d'argent en GNF depuis un compte en EUR) :
+  // le champ « reçoit » est rempli, l'envoi est calculé au taux : plus d'équivalent à deviner (avant : 10 × trop envoyé possible).
+  const pReceived      = firstParam(params.receivedAmount);
+  // ✅ v7.6 — demande d'argent à régler (« Payer ») : l'envoi y est LIÉ explicitement ; aucun autre envoi ne règle une demande.
+  const pRequestId     = firstParam(params.requestId);
+  const amountTouched  = useRef(false);
 
   // ── v7.0 — Parcours étape par étape ──────────────────────────────────────────────────────────────────────────────
   // 0 type · 1 destinataire · 2 montant · 3 motif · 4 confirmation · 5 succès. Ouvert avec ?mode=… : la 1re page est ignorée.
@@ -556,6 +563,13 @@ export default function SendMoneyScreen() {
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [pMode, pPhone, pBeneficiaryId, pAmount]);
+
+  // Re-appliqué quand la devise du destinataire est connue (décimales), tant que l'utilisateur n'a pas saisi lui-même un montant.
+  useEffect(() => {
+    if (!pReceived || amountTouched.current) return;
+    const a = sanitizeAmountInput(String(pReceived), dR);
+    if (parseAmount(a) > 0) { setRawReceivedAmount(a); setAmountSource("RECEIVED"); setSwapped(true); }
+  }, [pReceived, dR]); // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
     (api.http as any).get("/commissions/fees")
@@ -834,8 +848,8 @@ export default function SendMoneyScreen() {
   const sendText     = amountSource === "SEND"     ? rawAmount         : toInputText(sendAmount, dS);
   const receivedText = amountSource === "RECEIVED" ? rawReceivedAmount : toInputText(receivedAmt, dR);
 
-  const onSendChange = (v: string) => { setAmountSource("SEND");     setRawAmount(sanitizeAmountInput(v, dS)); };
-  const onRecvChange = (v: string) => { setAmountSource("RECEIVED"); setRawReceivedAmount(sanitizeAmountInput(v, dR)); };
+  const onSendChange = (v: string) => { amountTouched.current = true; setAmountSource("SEND");     setRawAmount(sanitizeAmountInput(v, dS)); };
+  const onRecvChange = (v: string) => { amountTouched.current = true; setAmountSource("RECEIVED"); setRawReceivedAmount(sanitizeAmountInput(v, dR)); };
 
   // ✅ v5.3 — flèche d'inversion (auparavant décorative) : le champ « reçoit » passe en haut et devient celui qu'on
   // saisit (clavier ouvert dessus) ; un second appui revient à « vous envoyez ». Les valeurs déjà saisies sont conservées.
@@ -979,7 +993,7 @@ export default function SendMoneyScreen() {
         // Le taux garanti n'entre PAS dans la signature d'idempotence : un renouvellement de garantie pendant une coupure
         // réseau ne doit jamais produire une seconde clé (donc un second envoi).
         const tx: any = await runOnce(JSON.stringify(walletPayload), (idempotencyKey) =>
-          api.createTransaction({ ...walletPayload, idempotencyKey, pin: confirmedPin, ...(lockIdToSend ? { rateLockId: lockIdToSend } : {}) }));
+          api.createTransaction({ ...walletPayload, idempotencyKey, pin: confirmedPin, ...(lockIdToSend ? { rateLockId: lockIdToSend } : {}), ...(pRequestId ? { moneyRequestId: pRequestId } : {}) }));
         // ✅ "id" confirmé comme champ de référence (utilisé par cancelTransaction/getTransaction dans api.ts)
         const reference = tx?.reference ?? tx?.id ?? `TX-${Date.now()}`;
         // ✅ v2.13 — FIX : si le backend n'a pas pu créditer immédiatement un wallet (aucun recipientId résolu —

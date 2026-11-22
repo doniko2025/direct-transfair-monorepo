@@ -33,12 +33,8 @@ import { useT } from "../../providers/I18nProvider";
 import GrowthCards from "../home/GrowthCards"; // lot 16 — raccourcis ronds (v2.0)
 import ExpressSendCard from "../home/ExpressSendCard"; // design E
 import RequestEnvelope from "../home/RequestEnvelope"; // enveloppe animée : demande d'argent reçue
+import { userCurrency } from "../../utils/currency";
 
-const COUNTRY_CURRENCY: Record<string, string> = {
-  GN: "GNF", SN: "XOF", ML: "XOF", CI: "XOF", BF: "XOF", BJ: "XOF",
-  TG: "XOF", NE: "XOF", GW: "XOF", FR: "EUR", DE: "EUR", BE: "EUR",
-  GB: "GBP", US: "USD",
-};
 
 
 export default function ClientDashboard() {
@@ -55,8 +51,7 @@ export default function ClientDashboard() {
     return () => { alive = false; };
   }, []);
 
-  const rawCountry = ((user as any)?.country ?? "").trim().toUpperCase().substring(0, 2);
-  const currency: string = (user as any)?.primaryCurrency || COUNTRY_CURRENCY[rawCountry] || "XOF";
+  const currency: string = userCurrency(user);
   const wallets = (user as any)?.wallets ?? [];
   const mainWallet = wallets.find((w: any) => w.currency === currency) ?? wallets.find((w: any) => w.isDefault) ?? wallets[0];
   const balance = toNum(mainWallet?.balance ?? (user as any)?.balance);

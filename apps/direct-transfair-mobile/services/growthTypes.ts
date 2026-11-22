@@ -55,7 +55,7 @@ export interface MoneyRequestsOverview {
 
 export interface MyReferral {
   code: string | null;
-  program: { active: boolean; refereeWaivers: number; referrerWaivers: number; validityDays: number; minFirstTransfer: number };
+  program: { active: boolean; refereeWaivers: number; referrerWaivers: number; validityDays: number; minFirstTransfer: number; minFirstTransferCurrency?: string | null };
   referredCount: number;
   freeTransfersLeft: number;
   nextExpiry: string | null;

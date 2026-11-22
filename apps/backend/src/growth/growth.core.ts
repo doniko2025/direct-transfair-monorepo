@@ -13,8 +13,8 @@
 import { BadRequestException, ConflictException, Logger } from '@nestjs/common';
 import type { Prisma } from '@prisma/client';
 import {
-  DEFAULT_REFERRAL, LOCK_MESSAGE, REFERRAL_KIND, judgeLock, normalizeReferralCode, rewardExpiry, startOfMonthUtc,
-  type ReferralSettings,
+  DEFAULT_REFERRAL, LOCK_MESSAGE, REFERRAL_KIND, judgeLock, normalizeReferralCode, paidInRequestCurrency, paymentSettlesRequest, rewardExpiry,
+  startOfMonthUtc, type PaymentLike, type ReferralSettings,
 } from './growth.rules';
 
 type Db = Prisma.TransactionClient;
@@ -108,12 +108,30 @@ export async function consumeWaiver(tx: Db, rewardId: string, transactionId: str
 }
 
 /**
- * Premier envoi abouti d'un filleul → le parrain gagne ses envois sans frais (une seule fois par filleul,
- * garanti par l'unicité (parrain, type, filleul), et dans la limite mensuelle). Jamais bloquant.
+ * Devise de référence du programme : le « premier envoi minimal » s'exprime dans la devise principale de la société (clients.defaultCurrency),
+ * pas dans celle de chaque filleul (5 000 GNF et 5 EUR n'étaient comparés qu'à un seul et même chiffre).
+ */
+export async function referralReferenceCurrency(db: Db, clientId: number): Promise<string | null> {
+  const row = await db.client.findUnique({ where: { id: clientId }, select: { defaultCurrency: true } });
+  return row?.defaultCurrency ? String(row.defaultCurrency) : null;
+}
+
+/**
+ * Premier envoi PAYÉ d'un filleul → le parrain gagne ses envois sans frais (une seule fois par filleul, garanti par l'unicité
+ * (parrain, type, filleul), et dans la limite mensuelle). Jamais bloquant.
+ *
+ * À appeler quand l'envoi est réellement payé : à la création pour un envoi vers un portefeuille (crédité tout de suite), au paiement du
+ * code en agence pour un retrait cash. Avant : à la création de tout envoi, même un envoi cash ensuite annulé ou expiré (le parrain
+ * gardait sa récompense). « Premier » = aucun autre envoi PAYÉ de ce client avant celui-ci.
+ *
+ * `convert` ramène le montant dans la devise de référence quand le minimum est > 0 ; sans conversion possible, pas de récompense.
  */
 export async function rewardReferrerOnFirstTransfer(
   db: Db,
-  p: { clientId: number; senderId: string; transactionId: string; amount: number; now?: Date },
+  p: {
+    clientId: number; senderId: string; transactionId: string; amount: number; currency?: string; now?: Date;
+    convert?: (amount: number, from: string, to: string) => Promise<number>;
+  },
 ): Promise<void> {
   try {
     const now = p.now ?? new Date();
@@ -122,14 +140,20 @@ export async function rewardReferrerOnFirstTransfer(
 
     const cfg = await loadReferralSettings(db, p.clientId);
     if (!cfg.isActive || cfg.referrerWaivers <= 0) return;
-    if (p.amount < cfg.minFirstTransfer) return;
 
-    // Premier envoi seulement : aucun autre envoi de ce client (hors annulés / échoués) avant celui-ci.
+    if (cfg.minFirstTransfer > 0) {
+      const reference = await referralReferenceCurrency(db, p.clientId);
+      let comparable = p.amount;
+      if (reference && p.currency && p.currency !== reference) {
+        if (!p.convert) return;
+        comparable = await p.convert(p.amount, p.currency, reference);
+      }
+      if (!(comparable >= cfg.minFirstTransfer)) return;
+    }
+
+    // Premier envoi PAYÉ seulement : aucun autre envoi payé de ce client avant celui-ci.
     const earlier = await db.transaction.count({
-      where: {
-        senderId: p.senderId, type: 'TRANSFER', id: { not: p.transactionId }, deletedAt: null,
-        status: { notIn: ['CANCELLED', 'FAILED', 'EXPIRED'] },
-      },
+      where: { senderId: p.senderId, type: 'TRANSFER', id: { not: p.transactionId }, deletedAt: null, status: 'PAID' },
     });
     if (earlier > 0) return;
 
@@ -183,4 +207,52 @@ export async function consumeRateLock(tx: Db, lockId: string, transactionId: str
     data: { consumedAt: now, transactionId },
   });
   if (res.count === 0) throw new BadRequestException(LOCK_MESSAGE.USED);
+}
+
+
+// ── Demandes d'argent : règlement par l'envoi fait POUR elle ─────────────────────────────
+
+export interface SettledRequest {
+  id: string;
+  requesterId: string;
+  asked: number;
+  got: number;
+  currency: string;
+  transactionId: string;
+}
+
+/**
+ * Règle UNE demande précise avec l'envoi qui vient d'être créé (appelé dans la transaction SQL de l'envoi : l'envoi et le règlement
+ * réussissent ou échouent ensemble). Le lien est explicite (`moneyRequestId` envoyé par l'écran « Payer ») : un envoi quelconque du
+ * payeur au demandeur ne règle plus une demande par hasard. Règle : bon payeur, bon destinataire, même société, demande encore en attente
+ * et non échue, montant reçu (dans la devise de la demande) au moins égal au montant demandé. Sinon : null, l'envoi reste un envoi normal.
+ */
+export async function settleLinkedMoneyRequest(
+  db: Db,
+  p: {
+    requestId: string; clientId: number; payerId: string; requesterId: string;
+    transaction: { id: string; currency: string; amount: number; targetCurrency: string | null; receivedAmount: number };
+    now?: Date;
+  },
+): Promise<SettledRequest | null> {
+  const now = p.now ?? new Date();
+  const r = await db.moneyRequest.findFirst({ where: { id: p.requestId, clientId: p.clientId, payerId: p.payerId, requesterId: p.requesterId, status: 'PENDING', expiresAt: { gt: now } } });
+  if (!r) return null;
+  const like: PaymentLike = {
+    senderId: p.payerId, recipientId: p.requesterId, clientId: p.clientId, status: 'PAID', currency: p.transaction.currency, amount: p.transaction.amount,
+    targetCurrency: p.transaction.targetCurrency, receivedAmount: p.transaction.receivedAmount, createdAt: now, deletedAt: null,
+  };
+  const req = { clientId: r.clientId, requesterId: r.requesterId, payerId: r.payerId, amount: Number(r.amount), currency: String(r.currency), createdAt: r.createdAt, expiresAt: r.expiresAt };
+  if (!paymentSettlesRequest(req, like)) return null;
+  const done = await db.moneyRequest.updateMany({ where: { id: r.id, status: 'PENDING' }, data: { status: 'PAID', respondedAt: now, paidTransactionId: p.transaction.id } });
+  if (done.count === 0) return null;
+  return { id: r.id, requesterId: r.requesterId, asked: Number(r.amount), got: paidInRequestCurrency(like, String(r.currency)), currency: String(r.currency), transactionId: p.transaction.id };
+}
+
+/** Texte de la notification « Demande réglée » : annonce le montant réellement reçu quand il dépasse la demande. */
+export function settledRequestMessage(s: Pick<SettledRequest, 'asked' | 'got' | 'currency'>): string {
+  const asked = `${s.asked.toLocaleString('fr-FR')} ${s.currency}`;
+  return Math.abs(s.got - s.asked) < 0.005
+    ? `Votre demande de ${asked} a été réglée.`
+    : `Votre demande de ${asked} a été réglée : vous avez reçu ${s.got.toLocaleString('fr-FR')} ${s.currency}.`;
 }

@@ -53,6 +53,7 @@ import { TintCard, alpha, shade } from "../../components/ui/Tint";
 import { Rise } from "../../components/merchant/merchantUi";
 import { formatInternationalInput } from "../../utils/phone";
 import { inkOn } from "../../components/ui/theme";
+import { userCurrency } from "../../utils/currency";
 
 const SENDWAVE_URL = getSendwaveUrl(); // ✅ phase 7 : modifiable (EXPO_PUBLIC_SENDWAVE_URL)
 
@@ -213,7 +214,7 @@ export default function RechargeScreen() {
   const { user, refreshUser } = useAuth();
   const bannerFg = inkOn(C.accent);
 
-  const currency = ((user as any)?.primaryCurrency ?? "XOF") as string;
+  const currency = userCurrency(user);
   const quickAmounts = QUICK_AMOUNTS[currency] ?? QUICK_AMOUNTS.XOF;
 
   const [balance, setBalance] = useState<number | null>(null);

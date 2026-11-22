@@ -53,6 +53,13 @@ function setup(opts: { createFails?: Error; pushFails?: boolean; user?: Json } =
   return { service, state, prisma, transactions, push, mail, transfer };
 }
 
+// L'heure est figée 3 minutes après l'échéance du jeu d'essai (comme un vrai passage du planificateur) : le calcul de la prochaine échéance
+// dépend de « maintenant » (les échéances manquées sont sautées), donc le test ne doit pas dépendre de la date du jour.
+const FROZEN = new Date('2026-10-12T10:03:00Z');
+const DATE_ONLY = { doNotFake: ['nextTick', 'setImmediate', 'clearImmediate', 'setInterval', 'clearInterval', 'setTimeout', 'clearTimeout', 'queueMicrotask', 'performance', 'hrtime'] as any };
+beforeEach(() => { jest.useFakeTimers({ now: FROZEN, ...DATE_ONLY }); });
+afterEach(() => { jest.useRealTimers(); });
+
 describe('ScheduledTransfersService.executeTransfer', () => {
   it('crée l\'envoi via TransactionsService (type SCHEDULED, clé d\'idempotence) puis avance l\'échéance', async () => {
     const { service, state, transfer, transactions } = setup();
@@ -126,6 +133,17 @@ describe('ScheduledTransfersService.executeTransfer', () => {
     expect(state.sched.failureReason).toMatch(/suspendu/);
   });
 
+  it('après une longue interruption, la prochaine échéance est dans le FUTUR (les échéances manquées ne sont pas rattrapées une à une)', async () => {
+    const { service, state, transfer } = setup();
+    jest.setSystemTime(new Date('2026-11-22T12:00:00Z'));           // 6 semaines après l'échéance enregistrée
+    await service.executeTransfer({ ...transfer(), frequency: 'DAILY' });
+    const next: Date = state.sched.nextExecutionAt;
+    expect(next.getTime()).toBeGreaterThan(Date.now());
+    expect(next.getTime() - Date.now()).toBeLessThanOrEqual(25 * 3_600_000);     // la PROCHAINE échéance, pas une échéance lointaine
+    expect(next.getHours()).toBe(new Date('2026-10-12T10:00:00Z').getHours());   // heure de passage conservée (quel que soit le fuseau du serveur)
+    expect(state.debits).toBe(1);
+  });
+
   it('un virement ONCE passe à COMPLETED', async () => {
     const { service, state, transfer } = setup();
     await service.executeTransfer({ ...transfer(), frequency: 'ONCE' });
@@ -151,5 +169,40 @@ describe('CreateScheduledTransferDto', () => {
     await expect(ok({ ...base, frequency: 'HOURLY' })).rejects.toBeInstanceOf(BadRequestException);
     await expect(ok({ ...base, payoutMethod: 'BANK_DEPOSIT' })).rejects.toBeInstanceOf(BadRequestException);
     await expect(ok({ ...base, beneficiaryId: '' })).rejects.toBeInstanceOf(BadRequestException);
+  });
+});
+
+describe('ScheduledTransfersService.resume / cancel', () => {
+  const build = (row: Json) => {
+    const prisma: Json = {
+      scheduledTransfer: {
+        findFirst: jest.fn().mockResolvedValue(row),
+        update: jest.fn().mockImplementation(async ({ data }: Json) => ({ ...row, ...data })),
+      },
+    };
+    return { service: new (ScheduledTransfersService as any)(prisma, {}, {}, {}) as any, prisma };
+  };
+
+  it('une reprise après une longue pause ne rejoue pas les échéances manquées', async () => {
+    jest.setSystemTime(new Date('2026-11-22T12:00:00Z'));
+    const { service, prisma } = build({ id: 's1', userId: 'u1', status: 'PAUSED', frequency: 'DAILY', nextExecutionAt: new Date('2026-10-12T10:00:00Z') });
+    await service.resume('s1', 'u1');
+    const data = prisma.scheduledTransfer.update.mock.calls[0][0].data;
+    expect(data.status).toBe('ACTIVE');
+    expect(data.nextExecutionAt.getTime()).toBeGreaterThan(Date.now());
+    expect(data.nextExecutionAt.getTime() - Date.now()).toBeLessThanOrEqual(25 * 3_600_000);
+  });
+
+  it('une reprise garde l\'échéance enregistrée si elle est encore à venir', async () => {
+    jest.setSystemTime(new Date('2026-10-12T09:00:00Z'));
+    const { service, prisma } = build({ id: 's1', userId: 'u1', status: 'PAUSED', frequency: 'WEEKLY', nextExecutionAt: new Date('2026-10-12T10:00:00Z') });
+    await service.resume('s1', 'u1');
+    expect(prisma.scheduledTransfer.update.mock.calls[0][0].data.nextExecutionAt.toISOString()).toBe('2026-10-12T10:00:00.000Z');
+  });
+
+  it('on n\'annule pas un virement déjà terminé', async () => {
+    const { service, prisma } = build({ id: 's1', userId: 'u1', status: 'COMPLETED', frequency: 'ONCE', nextExecutionAt: new Date() });
+    await expect(service.cancel('s1', 'u1')).rejects.toBeInstanceOf(BadRequestException);
+    expect(prisma.scheduledTransfer.update).not.toHaveBeenCalled();
   });
 });
