@@ -1,5 +1,6 @@
 // apps/direct-transfair-mobile/components/bills/billsUi.tsx
 // =========================================================
+// ✅ v1.2 : icônes des pastilles de catégorie et de « Factures programmées » visibles sur le web (le dégradé les recouvrait).
 // ✅ v1.1 : héro en carte blanche ombrée (plus de bleu) ; « Factures programmées » en vert léger ; palette des catégories sans bleu / indigo / violet.
 // PAIEMENT DE FACTURES (lot 14) — briques communes : icône et nom de catégorie, pastille de statut, ligne de facturier,
 // carte « facture enregistrée », ligne de paiement. Cartes animées (apparition en cascade), thème clair / sombre.
@@ -79,7 +80,10 @@ export function CategoryBadge({ category, size = 48 }: { category: string; size?
   return (
     <View style={{ width: size, height: size, borderRadius: size / 2.6, overflow: "hidden", alignItems: "center", justifyContent: "center", shadowColor: hue, shadowOpacity: 0.35, shadowRadius: 8, shadowOffset: { width: 0, height: 4 }, elevation: 3 }}>
       <LinearGradient colors={[hue, shade(hue, 0.28)]} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }} style={StyleSheet.absoluteFill} />
-      <Ionicons name={categoryIcon(category) as any} size={size * 0.48} color="#FFFFFF" />
+      {/* Sur le web le dégradé (position absolue) se peignait PAR-DESSUS l'icône : on la place dans une vue au-dessus (zIndex) pour qu'elle reste visible. */}
+      <View style={{ zIndex: 1 }}>
+        <Ionicons name={categoryIcon(category) as any} size={size * 0.48} color="#FFFFFF" />
+      </View>
     </View>
   );
 }
@@ -162,7 +166,9 @@ export function ScheduleEntryCard({ title, subtitle, onPress, delay = 0 }: { tit
         <View style={{ flexDirection: "row", alignItems: "center", gap: 14 }}>
           <View style={{ width: 52, height: 52, borderRadius: 20, overflow: "hidden", alignItems: "center", justifyContent: "center" }}>
             <LinearGradient colors={[hue, shade(hue, 0.3)]} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }} style={StyleSheet.absoluteFill} />
-            <Ionicons name={"calendar-outline" as any} size={24} color="#FFFFFF" />
+            <View style={{ zIndex: 1 }}>
+              <Ionicons name={"calendar-outline" as any} size={24} color="#FFFFFF" />
+            </View>
           </View>
           <View style={{ flex: 1, minWidth: 0, gap: 3 }}>
             <UText v="bodyStrong" style={{ fontWeight: "800" }}>{title}</UText>

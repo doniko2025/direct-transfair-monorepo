@@ -1,10 +1,11 @@
-import { attachReferral, consumeRateLock, consumeWaiver, findUsableWaiver, resolveRateLock, rewardReferrerOnFirstTransfer, settleLinkedMoneyRequest } from './growth.core';
+import { attachReferral, consumeRateLock, consumeWaiver, findUsableWaiver, reopenMoneyRequestOf, resolveRateLock, restoreWaiverOf, revokeReferrerRewardOf, rewardReferrerOnFirstTransfer, settleLinkedMoneyRequest } from './growth.core';
 
 /** Mini base en mémoire : juste ce dont growth.core a besoin. */
-function fakeDb(seed: { users?: any[]; rewards?: any[]; locks?: any[]; config?: any; transactions?: any[]; requests?: any[]; refCurrency?: string } = {}) {
+function fakeDb(seed: { uses?: any[]; users?: any[]; rewards?: any[]; locks?: any[]; config?: any; transactions?: any[]; requests?: any[]; refCurrency?: string } = {}) {
   const requests = seed.requests ?? [];
   const users = seed.users ?? [];
   const rewards = seed.rewards ?? [];
+  const uses = seed.uses ?? [];
   const locks = seed.locks ?? [];
   const notifications: any[] = [];
   const transactions = seed.transactions ?? [];
@@ -17,12 +18,13 @@ function fakeDb(seed: { users?: any[]; rewards?: any[]; locks?: any[]; config?: 
         if ('gte' in v) return row[k] >= v.gte;
         if ('not' in v) return row[k] !== v.not;
         if ('notIn' in v) return !v.notIn.includes(row[k]);
+        if ('in' in v) return v.in.includes(row[k]);
         return true;
       }
       return row[k] === v;
     });
   const db: any = {
-    users, rewards, locks, notifications, requests,
+    users, rewards, uses, locks, notifications, requests,
     referralConfig: { findUnique: async () => seed.config ?? null },
     user: {
       findFirst: async ({ where }: any) => users.find((u) => match(u, where)) ?? null,
@@ -37,11 +39,18 @@ function fakeDb(seed: { users?: any[]; rewards?: any[]; locks?: any[]; config?: 
       },
       findFirst: async ({ where }: any) => rewards.filter((r) => match(r, where)).sort((a, b) => a.expiresAt - b.expiresAt)[0] ?? null,
       count: async ({ where }: any) => rewards.filter((r) => match(r, where)).length,
+      deleteMany: async ({ where }: any) => { const rows = rewards.filter((r) => match(r, where)); rows.forEach((r) => rewards.splice(rewards.indexOf(r), 1)); return { count: rows.length }; },
       updateMany: async ({ where, data }: any) => {
         const rows = rewards.filter((r) => match(r, where));
-        rows.forEach((r) => { for (const [k, v] of Object.entries<any>(data)) { if (v && typeof v === 'object' && 'decrement' in v) r[k] -= v.decrement; else r[k] = v; } });
+        rows.forEach((r) => { for (const [k, v] of Object.entries<any>(data)) { if (v && typeof v === 'object' && 'decrement' in v) r[k] -= v.decrement; else if (v && typeof v === 'object' && 'increment' in v) r[k] += v.increment; else r[k] = v; } });
         return { count: rows.length };
       },
+    },
+    referralRewardUse: {
+      create: async ({ data }: any) => { if (uses.some((u) => u.transactionId === data.transactionId)) throw Object.assign(new Error('dup'), { code: 'P2002' }); const row = { id: `u${uses.length + 1}`, ...data }; uses.push(row); return row; },
+      findUnique: async ({ where }: any) => uses.find((u) => u.transactionId === where.transactionId) ?? null,
+      deleteMany: async ({ where }: any) => { const rows = uses.filter((u) => match(u, where)); rows.forEach((u) => uses.splice(uses.indexOf(u), 1)); return { count: rows.length }; },
+      count: async ({ where }: any) => uses.filter((u) => match(u, where)).length,
     },
     client: { findUnique: async () => ({ defaultCurrency: seed.refCurrency ?? 'EUR' }) },
     moneyRequest: {
@@ -251,5 +260,115 @@ describe('demande d\'argent réglée par l\'envoi qui lui est lié', () => {
 
   it('une demande inconnue n\'est pas un problème : l\'envoi reste un envoi normal', async () => {
     expect(await run(fakeDb(), { requestId: 'nope' })).toBeNull();
+  });
+});
+
+
+describe('restoreWaiverOf — un envoi sans frais n\'est pas perdu quand l\'envoi est annulé', () => {
+  const reward = (over: any = {}) => ({ id: 'w1', userId: 'u', kind: 'REFEREE_WELCOME', status: 'USED', remaining: 0, expiresAt: new Date('2026-12-30T00:00:00Z'), transactionId: 't1', ...over });
+  const use = (transactionId: string, rewardId = 'w1') => ({ id: `use-${transactionId}`, rewardId, transactionId });
+
+  it('rend l\'envoi consommé par cet envoi : récompense de nouveau disponible', async () => {
+    const db = fakeDb({ rewards: [reward()], uses: [use('t1')] });
+    expect(await restoreWaiverOf(db, 't1')).toBe(true);
+    expect(db.rewards[0]).toMatchObject({ status: 'AVAILABLE', remaining: 1, transactionId: null });
+    expect(db.uses).toHaveLength(0);
+    expect((await findUsableWaiver(db, 'u', new Date('2026-11-22T00:00:00Z')))?.id).toBe('w1');
+  });
+
+  it('récompense à plusieurs envois : on rend l\'envoi du bon envoi, même s\'il n\'est pas le dernier', async () => {
+    // 3 envois offerts, 3 utilisés par t1, t2, t3 (t3 = dernier). t1 est annulé.
+    const db = fakeDb({ rewards: [reward({ remaining: 0, transactionId: 't3' })], uses: [use('t1'), use('t2'), use('t3')] });
+    expect(await restoreWaiverOf(db, 't1')).toBe(true);
+    expect(db.rewards[0]).toMatchObject({ status: 'AVAILABLE', remaining: 1, transactionId: 't3' }); // le « dernier envoi » n'a pas bougé
+    expect(db.uses.map((u: any) => u.transactionId)).toEqual(['t2', 't3']);
+    expect(await restoreWaiverOf(db, 't2')).toBe(true);
+    expect(db.rewards[0].remaining).toBe(2);
+  });
+
+  it('un envoi qui n\'a consommé aucune récompense, ou une récompense expirée : rien ne change', async () => {
+    const db = fakeDb({ rewards: [reward(), reward({ id: 'w2', transactionId: 't9', status: 'EXPIRED' })], uses: [use('t1'), use('t9', 'w2')] });
+    expect(await restoreWaiverOf(db, 'autre')).toBe(false);
+    await restoreWaiverOf(db, 't9');
+    expect(db.rewards[1]).toMatchObject({ status: 'EXPIRED', remaining: 0 });
+  });
+
+  it('idempotent : un second appel ne rend pas deux fois', async () => {
+    const db = fakeDb({ rewards: [reward()], uses: [use('t1')] });
+    await restoreWaiverOf(db, 't1');
+    expect(await restoreWaiverOf(db, 't1')).toBe(false);
+    expect(db.rewards[0].remaining).toBe(1);
+  });
+
+  it('consumeWaiver enregistre chaque utilisation ; consommer puis rendre revient à l\'état de départ', async () => {
+    const db = fakeDb({ rewards: [reward({ status: 'AVAILABLE', remaining: 2, transactionId: null })] });
+    await consumeWaiver(db, 'w1', 'tA', now);
+    await consumeWaiver(db, 'w1', 'tB', now);
+    expect(db.uses.map((u: any) => u.transactionId)).toEqual(['tA', 'tB']);
+    expect(db.rewards[0]).toMatchObject({ status: 'USED', remaining: 0 });
+    await restoreWaiverOf(db, 'tA');
+    expect(db.rewards[0]).toMatchObject({ status: 'AVAILABLE', remaining: 1 });
+  });
+});
+
+describe('revokeReferrerRewardOf — le premier envoi du filleul est rappelé : le parrain perd sa récompense', () => {
+  const users = () => [
+    { id: 'p', clientId: 1, isActive: true, referralCode: 'AB12CD', referredById: null, firstName: 'Parrain' },
+    { id: 'f', clientId: 1, isActive: true, referralCode: 'ZZ99ZZ', referredById: 'p', firstName: 'Filleul' },
+  ];
+  const grant = async (db: any, transactionId = 'tF') => rewardReferrerOnFirstTransfer(db, { clientId: 1, senderId: 'f', transactionId, amount: 50, currency: 'EUR', now });
+
+  it('la récompense garde l\'envoi qui l\'a déclenchée', async () => {
+    const db = fakeDb({ users: users(), config: cfg });
+    await grant(db);
+    expect(db.rewards[0]).toMatchObject({ userId: 'p', kind: 'REFERRER_BONUS', grantedByTransactionId: 'tF' });
+  });
+
+  it('récompense intacte : supprimée ; le prochain premier envoi payé du filleul la redonne', async () => {
+    const db = fakeDb({ users: users(), config: cfg });
+    await grant(db);
+    expect(await revokeReferrerRewardOf(db, 'tF')).toBe(true);
+    expect(db.rewards).toHaveLength(0);
+    await grant(db, 'tG');
+    expect(db.rewards[0]).toMatchObject({ grantedByTransactionId: 'tG' });
+  });
+
+  it('déjà en partie utilisée : les envois restants sont retirés, ceux utilisés restent acquis', async () => {
+    const db = fakeDb({ users: users(), config: { ...cfg, referrerWaivers: 3 } });
+    await grant(db);
+    await consumeWaiver(db, db.rewards[0].id, 'tP1', now);
+    expect(await revokeReferrerRewardOf(db, 'tF')).toBe(true);
+    expect(db.rewards[0]).toMatchObject({ remaining: 0, status: 'USED' });
+    expect(db.uses).toHaveLength(1);
+  });
+
+  it('un autre envoi, ou une récompense du filleul (pas du parrain) : rien ne change', async () => {
+    const db = fakeDb({ users: users(), config: cfg });
+    await grant(db);
+    expect(await revokeReferrerRewardOf(db, 'autre')).toBe(false);
+    expect(db.rewards).toHaveLength(1);
+  });
+});
+
+describe('reopenMoneyRequestOf — la demande réglée par un envoi rappelé redevient ouverte', () => {
+  const request = (over: any = {}) => ({ id: 'r1', status: 'PAID', paidTransactionId: 't1', respondedAt: new Date('2026-11-22T00:00:00Z'), expiresAt: new Date('2026-11-29T00:00:00Z'), ...over });
+  const at = new Date('2026-11-23T00:00:00Z');
+
+  it('encore valable : de nouveau en attente, plus liée à l\'envoi', async () => {
+    const db = fakeDb({ requests: [request()] });
+    expect(await reopenMoneyRequestOf(db, 't1', at)).toBe(true);
+    expect(db.requests[0]).toMatchObject({ status: 'PENDING', paidTransactionId: null, respondedAt: null });
+  });
+
+  it('échue entre-temps : expirée, jamais « payée »', async () => {
+    const db = fakeDb({ requests: [request({ expiresAt: new Date('2026-11-22T12:00:00Z') })] });
+    expect(await reopenMoneyRequestOf(db, 't1', at)).toBe(true);
+    expect(db.requests[0]).toMatchObject({ status: 'EXPIRED', paidTransactionId: null });
+  });
+
+  it('un autre envoi, ou une demande non payée : rien ne change', async () => {
+    const db = fakeDb({ requests: [request(), request({ id: 'r2', status: 'PENDING', paidTransactionId: null })] });
+    expect(await reopenMoneyRequestOf(db, 'autre', at)).toBe(false);
+    expect(db.requests.map((r: any) => r.status)).toEqual(['PAID', 'PENDING']);
   });
 });

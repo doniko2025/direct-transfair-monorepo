@@ -17,6 +17,9 @@ function setup(rows: any[]) {
       findUniqueOrThrow: jest.fn(async ({ where }: any) => ({ ...state.rows.find((r) => r.id === where.id) })),
     },
     withdrawal: { updateMany: jest.fn(async ({ data }: any) => { state.wd.push(data.status); return { count: 1 }; }) },
+    referralReward: { updateMany: jest.fn(async () => ({ count: 0 })), findFirst: jest.fn(async () => null), deleteMany: jest.fn(async () => ({ count: 0 })) }, // lot 18 : envoi sans frais rendu, récompense du parrain retirée
+    referralRewardUse: { findUnique: jest.fn(async () => null), deleteMany: jest.fn(async () => ({ count: 0 })), count: jest.fn(async () => 0) },
+    moneyRequest: { updateMany: jest.fn(async () => ({ count: 0 })) }, // lot 18 : demande d'argent rouverte au rappel
   };
   const prisma: any = {
     // v4.34 : le wallet remboursé est lu dans le journal (DEBIT) ; sans écriture, repli sur les règles (anciennes données). Client de passage : aucun.

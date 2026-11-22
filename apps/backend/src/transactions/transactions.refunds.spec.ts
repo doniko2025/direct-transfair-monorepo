@@ -25,6 +25,9 @@ function setup(row: Row, opts: { agencyWallet?: boolean; superAdminClientId?: nu
       findUniqueOrThrow: jest.fn().mockImplementation(async () => ({ ...state.tx })),
     },
     withdrawal: { updateMany: jest.fn().mockImplementation(async () => { state.withdrawalUpdates++; return { count: 1 }; }) },
+    referralReward: { updateMany: jest.fn(async () => ({ count: 0 })), findFirst: jest.fn(async () => null), deleteMany: jest.fn(async () => ({ count: 0 })) }, // lot 18 : envoi sans frais rendu, récompense du parrain retirée
+    referralRewardUse: { findUnique: jest.fn(async () => null), deleteMany: jest.fn(async () => ({ count: 0 })), count: jest.fn(async () => 0) },
+    moneyRequest: { updateMany: jest.fn(async () => ({ count: 0 })) }, // lot 18 : demande d'argent rouverte au rappel
   };
 
   const prisma: any = {

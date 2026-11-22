@@ -320,7 +320,7 @@ import { TransferLimitsService } from '../transfer-limits/transfer-limits.servic
 import { KycGuardService } from '../kyc/kyc-guard.service'; // lot 7 — pas d'opération sortante sans identité vérifiée
 import { CounterCustomersService, type ResolvedCounterCustomer } from '../kyc/counter-customers.service'; // lot 7 — expéditeur de passage
 import { roundToCurrency } from '../fee-schedule/fee-engine';
-import { consumeRateLock, consumeWaiver, findUsableWaiver, resolveRateLock, rewardReferrerOnFirstTransfer, settleLinkedMoneyRequest, settledRequestMessage, type LockedRate, type SettledRequest, type UsableReward } from '../growth/growth.core'; // lot 16 — garantie de taux + parrainage
+import { consumeRateLock, consumeWaiver, findUsableWaiver, reopenMoneyRequestOf, resolveRateLock, restoreWaiverOf, revokeReferrerRewardOf, rewardReferrerOnFirstTransfer, settleLinkedMoneyRequest, settledRequestMessage, type LockedRate, type SettledRequest, type UsableReward } from '../growth/growth.core'; // lot 16 — garantie de taux + parrainage
 import { findIdempotent, isIdempotencyConflict } from './idempotency';
 import { addMonths, pickupExpiryFrom, pickupValidityMonths } from './pickup-rules';
 import { CompanySettingsService } from '../company-settings/company-settings.service';
@@ -870,6 +870,11 @@ export class TransactionsService {
         data:  { status: withdrawalStatus ?? (failed ? WithdrawalStatus.FAILED : expired ? WithdrawalStatus.EXPIRED : WithdrawalStatus.CANCELLED) },
       });
 
+      // ✅ audit argent (lot 18) — l'envoi n'aboutit pas : l'avantage « envoi sans frais » consommé par cet envoi est rendu, et la demande
+      // d'argent qu'il avait réglée est rouverte (dans la même transaction SQL que le remboursement).
+      await restoreWaiverOf(prismaTx, tx.id);
+      await reopenMoneyRequestOf(prismaTx, tx.id);
+
       return prismaTx.transaction.findUniqueOrThrow({ where: { id: tx.id } });
     });
   }
@@ -1057,6 +1062,12 @@ export class TransactionsService {
       await this.walletsService.creditInTx(
         prismaTx, debit.walletId, senderRefund, `Rappel envoi ${tx.reference} — remboursement`, tx.id, { allowFrozen: true },
       );
+      // ✅ audit argent (lot 18) — le destinataire n'a plus l'argent : la demande d'argent réglée par cet envoi redevient ouverte, et un
+      // éventuel envoi sans frais consommé par cet envoi est rendu à l'expéditeur.
+      await reopenMoneyRequestOf(prismaTx, tx.id);
+      await restoreWaiverOf(prismaTx, tx.id);
+      // Le filleul n'a finalement pas fait ce premier envoi : la récompense qu'il avait rapportée à son parrain est retirée.
+      await revokeReferrerRewardOf(prismaTx, tx.id);
       return prismaTx.transaction.findUniqueOrThrow({ where: { id: tx.id } });
     });
 

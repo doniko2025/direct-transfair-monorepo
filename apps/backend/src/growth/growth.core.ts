@@ -104,7 +104,66 @@ export async function consumeWaiver(tx: Db, rewardId: string, transactionId: str
     data: { remaining: { decrement: 1 }, usedAt: now, transactionId },
   });
   if (res.count === 0) throw new ConflictException('Votre envoi sans frais vient d’être utilisé par un autre envoi. Relancez : les frais habituels s’appliqueront.');
+  // Une ligne par utilisation : l'envoi annulé rendra exactement SON envoi sans frais (voir restoreWaiverOf).
+  await tx.referralRewardUse.create({ data: { rewardId, transactionId } });
   await tx.referralReward.updateMany({ where: { id: rewardId, remaining: { lte: 0 }, status: 'AVAILABLE' }, data: { status: 'USED' } });
+}
+
+/**
+ * Rend l'envoi sans frais consommé par un envoi qui n'a finalement pas abouti (annulé, expiré, échoué, rappelé) : le client avait été
+ * facturé sans frais, mais comme il récupère tout son argent, il ne doit pas perdre son avantage en plus. Dans la transaction SQL du
+ * remboursement. Chaque utilisation est enregistrée (ReferralRewardUse) : l'envoi rendu est EXACTEMENT celui de cet envoi, même quand la
+ * récompense en offrait plusieurs. Idempotent. Une récompense marquée expirée n'est pas ressuscitée. Renvoie true si un envoi a été rendu.
+ */
+export async function restoreWaiverOf(tx: Db, transactionId: string): Promise<boolean> {
+  const use = await tx.referralRewardUse.findUnique({ where: { transactionId } });
+  if (!use) return false;
+  const removed = await tx.referralRewardUse.deleteMany({ where: { id: use.id } });
+  if (removed.count === 0) return false; // un autre appel l'a déjà rendu
+  await tx.referralReward.updateMany({
+    where: { id: use.rewardId, status: { in: ['AVAILABLE', 'USED'] } },
+    data: { remaining: { increment: 1 }, status: 'AVAILABLE' },
+  });
+  // La colonne « dernier envoi » ne doit plus pointer sur un envoi annulé.
+  await tx.referralReward.updateMany({ where: { id: use.rewardId, transactionId }, data: { transactionId: null } });
+  return true;
+}
+
+/**
+ * Retire la récompense gagnée par le PARRAIN grâce à un envoi de son filleul, quand cet envoi est rappelé : le filleul n'a finalement pas
+ * fait ce « premier envoi ». Dans la transaction SQL du rappel.
+ *   • récompense encore intacte → supprimée (le prochain premier envoi PAYÉ du filleul la redonnera) ;
+ *   • déjà en partie utilisée → les envois sans frais restants sont retirés, ceux déjà utilisés restent acquis.
+ * Renvoie true si une récompense a été retirée ou réduite.
+ */
+export async function revokeReferrerRewardOf(tx: Db, transactionId: string): Promise<boolean> {
+  const reward = await tx.referralReward.findFirst({ where: { grantedByTransactionId: transactionId, kind: REFERRAL_KIND.referrer } });
+  if (!reward) return false;
+  const used = await tx.referralRewardUse.count({ where: { rewardId: reward.id } });
+  if (used === 0) {
+    const gone = await tx.referralReward.deleteMany({ where: { id: reward.id } });
+    return gone.count > 0;
+  }
+  const cut = await tx.referralReward.updateMany({ where: { id: reward.id }, data: { remaining: 0, status: 'USED' } });
+  return cut.count > 0;
+}
+
+/**
+ * Rouvre la demande d'argent réglée par un envoi qui est ensuite remboursé (rappel par le service client) : le demandeur n'a plus l'argent,
+ * la demande ne doit plus apparaître « payée ». Encore valable → de nouveau « en attente » ; échue entre-temps → « expirée ».
+ * Dans la transaction SQL du remboursement. Renvoie true si une demande a été rouverte.
+ */
+export async function reopenMoneyRequestOf(tx: Db, transactionId: string, now: Date = new Date()): Promise<boolean> {
+  const live = await tx.moneyRequest.updateMany({
+    where: { paidTransactionId: transactionId, status: 'PAID', expiresAt: { gt: now } },
+    data: { status: 'PENDING', respondedAt: null, paidTransactionId: null },
+  });
+  if (live.count > 0) return true;
+  const late = await tx.moneyRequest.updateMany({
+    where: { paidTransactionId: transactionId, status: 'PAID' },
+    data: { status: 'EXPIRED', paidTransactionId: null },
+  });
+  return late.count > 0;
 }
 
 /**
@@ -165,7 +224,7 @@ export async function rewardReferrerOnFirstTransfer(
     await db.referralReward.create({
       data: {
         clientId: p.clientId, userId: sender.referredById, kind: REFERRAL_KIND.referrer, sourceUserId: p.senderId,
-        remaining: cfg.referrerWaivers, expiresAt: rewardExpiry(now, cfg.rewardValidityDays),
+        remaining: cfg.referrerWaivers, expiresAt: rewardExpiry(now, cfg.rewardValidityDays), grantedByTransactionId: p.transactionId,
       },
     });
     await db.notification.create({

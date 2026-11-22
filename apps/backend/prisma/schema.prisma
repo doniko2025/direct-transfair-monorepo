@@ -3246,15 +3246,32 @@ model ReferralReward {
   /// Envois sans frais encore utilisables (1 par défaut ; la société peut en offrir plusieurs).
   remaining     Int                  @default(1)
   expiresAt     DateTime
-  /// Dernière utilisation (et dernier envoi concerné).
+  /// Dernière utilisation (et dernier envoi concerné). Le détail de chaque utilisation est dans ReferralRewardUse.
   usedAt        DateTime?
   transactionId String?
+  /// Récompense du parrain : l'envoi PAYÉ du filleul qui l'a déclenchée (retirée si cet envoi est rappelé).
+  grantedByTransactionId String?
   createdAt     DateTime             @default(now())
+  uses          ReferralRewardUse[]
 
   @@unique([userId, kind, sourceUserId])
   @@index([userId, status])
   @@index([clientId, createdAt])
+  @@index([grantedByTransactionId])
   @@map("referral_rewards")
+}
+
+/// Un envoi sans frais consommé = une ligne. Permet de rendre EXACTEMENT l'envoi sans frais d'un envoi annulé, même quand la récompense
+/// en offrait plusieurs (la colonne `transactionId` de la récompense ne garde que le dernier).
+model ReferralRewardUse {
+  id            String         @id @default(cuid())
+  rewardId      String
+  reward        ReferralReward @relation(fields: [rewardId], references: [id], onDelete: Cascade)
+  transactionId String         @unique
+  createdAt     DateTime       @default(now())
+
+  @@index([rewardId])
+  @@map("referral_reward_uses")
 }
 
 
