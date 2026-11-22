@@ -8,6 +8,8 @@
 //   GET   /rates-admin[?clientId]                       un couple par paire (EUR_XOF…), taux enregistré (null tant qu'aucun n'est fixé)
 //   GET   /rates-admin/:pair/history?limit[&clientId]   historique, le plus récent d'abord
 //   PATCH /rates-admin/:pair                            { rate, confirmLargeChange? } — le sens inverse se déduit (COMPANY_ADMIN)
+//   GET   /rates-admin/margin[?clientId]                marge de change de la société { fxMarginPct, maxFxMarginPct }
+//   PATCH /rates-admin/margin                           { fxMarginPct } — 0 à 10 %, retenu sur chaque conversion côté client (COMPANY_ADMIN)
 // `clientId` n'est lu que pour le super admin (société consultée) ; un admin de société agit toujours sur SA société.
 //
 // Aucun taux n'est écrit en dur : tant qu'une paire n'est pas fixée, les conversions qui en dépendent sont refusées (503).
@@ -41,6 +43,15 @@ export interface RatePair {
 
 export interface RatesOverview {
   pairs: RatePair[];
+  /** Marge de change de la société, en % retenu sur chaque conversion côté client (0 = aucune). */
+  fxMarginPct: number;
+  /** Plafond accepté par le serveur (10 %). */
+  maxFxMarginPct: number;
+}
+
+export interface FxMarginSetting {
+  fxMarginPct: number;
+  maxFxMarginPct: number;
 }
 
 export interface RateHistoryEntry {
@@ -63,6 +74,10 @@ export function createRatesApi(http: HttpClient) {
 
     history: (pair: string, limit = 50, clientId?: number) =>
       http.get<RateHistory>(`/rates-admin/${encodeURIComponent(pair)}/history?limit=${limit}${clientId ? `&clientId=${clientId}` : ''}`),
+
+    margin: (clientId?: number) => http.get<FxMarginSetting>(`/rates-admin/margin${clientId ? `?clientId=${clientId}` : ''}`),
+
+    setMargin: (fxMarginPct: number) => http.patch<FxMarginSetting>('/rates-admin/margin', { fxMarginPct }),
 
     set: (pair: string, rate: number, confirmLargeChange = false) =>
       http.patch<RatePair>(`/rates-admin/${encodeURIComponent(pair)}`, {

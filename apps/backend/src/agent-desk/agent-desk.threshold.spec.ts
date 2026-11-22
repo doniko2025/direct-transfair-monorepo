@@ -8,7 +8,7 @@ function build(threshold: number) {
     wallet: { findMany: jest.fn().mockResolvedValue([{ id: 'w1', currency: 'XOF', balance: 10_000_000, reservedBalance: 0, isDefault: true, isFrozen: false }]) },
   };
   const feeSchedule: any = { quote: jest.fn().mockResolvedValue({ fees: 100, total: 0, feeRatePct: 1, source: 'DEFAULT', rule: null }) };
-  const rates: any = { convert: jest.fn().mockResolvedValue(1) };
+  const rates: any = { convert: jest.fn().mockResolvedValue(1), convertForCustomer: jest.fn().mockResolvedValue({ converted: 1, marginPct: 0 }) };
   const thresholds: any = { thresholdFor: jest.fn().mockResolvedValue(threshold) };
   return { service: new AgentDeskService(prisma, feeSchedule, rates, thresholds), thresholds };
 }

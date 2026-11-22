@@ -18,6 +18,7 @@ describe('ExchangeRatesService', () => {
       findMany: jest.fn().mockResolvedValue([]),
       create:   jest.fn().mockResolvedValue({ id: 'cuid2' }),
     },
+    client: { findUnique: jest.fn().mockResolvedValue({ fxMarginPct: 0 }) },   // marge de change de la société (v2.1)
   };
 
   beforeEach(async () => {
@@ -29,7 +30,13 @@ describe('ExchangeRatesService', () => {
     }).compile();
 
     service = module.get<ExchangeRatesService>(ExchangeRatesService);
-    jest.clearAllMocks();
+    jest.resetAllMocks();   // les valeurs posées par un test ne fuient pas dans le suivant
+    mockPrisma.exchangeRate.findMany.mockResolvedValue([]);
+    mockPrisma.exchangeRate.findFirst.mockResolvedValue(null);
+    mockPrisma.exchangeRate.upsert.mockResolvedValue({ id: 'cuid1', pair: 'EUR_XOF', rate: 655.957 });
+    mockPrisma.exchangeRateHistory.findMany.mockResolvedValue([]);
+    mockPrisma.exchangeRateHistory.create.mockResolvedValue({ id: 'cuid2' });
+    mockPrisma.client.findUnique.mockResolvedValue({ fxMarginPct: 0 });
   });
 
   it('should be defined', () => {
@@ -43,6 +50,27 @@ describe('ExchangeRatesService', () => {
     expect(mockPrisma.exchangeRate.findMany).toHaveBeenCalledWith(
       expect.objectContaining({ where: { clientId: CO, isActive: true } }),
     );
+  });
+
+  it('findAll() ajoute la marge de change de la société à chaque ligne', async () => {
+    mockPrisma.exchangeRate.findMany.mockResolvedValue([{ pair: 'EUR_GNF', rate: 10500 }]);
+    mockPrisma.client.findUnique.mockResolvedValue({ fxMarginPct: '1.50' });
+    await expect(service.findAll(CO)).resolves.toEqual([{ pair: 'EUR_GNF', rate: 10500, fxMarginPct: 1.5 }]);
+  });
+
+  it('convert() retient la marge de change : 10 700 avec 2 % de marge → 10 486', async () => {
+    mockPrisma.exchangeRate.findFirst.mockResolvedValue({ pair: 'EUR_GNF', rate: 10700 });
+    mockPrisma.client.findUnique.mockResolvedValue({ fxMarginPct: 2 });
+    const result = await service.convert(1, 'EUR', 'GNF', CO);
+    expect(result.rate).toBeCloseTo(10486, 6);
+    expect(result.convertedAmount).toBeCloseTo(10486, 2);
+  });
+
+  it('convert() par la paire inverse retient aussi la marge (le client reçoit moins, jamais plus)', async () => {
+    mockPrisma.exchangeRate.findFirst.mockResolvedValueOnce(null).mockResolvedValueOnce({ pair: 'EUR_GNF', rate: 10000 });
+    mockPrisma.client.findUnique.mockResolvedValue({ fxMarginPct: 2 });
+    const result = await service.convert(10000, 'GNF', 'EUR', CO);
+    expect(result.rate).toBeCloseTo(0.0001 * 0.98, 12);
   });
 
   it('findAll() sans société : aucun taux publié, aucune requête', async () => {

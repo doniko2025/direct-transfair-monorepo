@@ -351,6 +351,7 @@ function normalizeExchangeRate(r: unknown): ExchangeRate {
     changePercent:
       rr.changePercent !== undefined ? toNumberSafe(rr.changePercent) : undefined,
     updatedAt: rr.updatedAt ? String(rr.updatedAt) : undefined,
+    fxMarginPct: rr.fxMarginPct !== undefined && rr.fxMarginPct !== null ? toNumberSafe(rr.fxMarginPct) : undefined,
   };
 }
 

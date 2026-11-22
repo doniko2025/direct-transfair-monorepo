@@ -176,3 +176,38 @@
 .rate-history-item .ledger-item__main {
   flex: 1 1 240px;
 }
+
+/* ── Marge de change de la société ─────────────────────── */
+.fxm {
+  display: grid;
+  gap: 12px;
+  margin-bottom: 14px;
+  padding: 14px 16px;
+  border-radius: var(--r-md);
+  background: var(--card);
+  box-shadow: var(--sh-1);
+  border: 1px solid color-mix(in srgb, var(--brand) 14%, transparent);
+  animation: fxm-in .35s ease both;
+}
+.fxm[data-active='true'] { border-color: color-mix(in srgb, var(--brand) 40%, transparent); }
+.fxm__head { display: flex; align-items: flex-start; gap: 10px; min-width: 0; }
+.fxm__icon { display: grid; place-items: center; flex: none; width: 38px; height: 38px; border-radius: 12px; background: color-mix(in srgb, var(--brand) 14%, transparent); color: var(--brand); }
+.fxm__titles { flex: 1 1 0; min-width: 0; display: grid; gap: 2px; }
+.fxm__title { font-size: var(--t-md); }
+.fxm__sub, .fxm__note { color: var(--ink-3); font-size: var(--t-sm); }
+.fxm__note { font-size: .78rem; }
+.fxm__badge { flex: none; padding: 4px 10px; border-radius: 999px; font-weight: 700; font-size: var(--t-sm); background: var(--bg-2, rgba(0, 0, 0, .06)); color: var(--ink-3); }
+.fxm__badge[data-on='true'] { background: color-mix(in srgb, var(--brand) 16%, transparent); color: var(--brand); }
+.fxm__form { display: grid; gap: 10px; }
+.fxm__chips { display: flex; flex-wrap: wrap; gap: 8px; }
+.fxm__chip { padding: 6px 12px; border-radius: 999px; border: 1px solid color-mix(in srgb, var(--ink-3) 30%, transparent); background: transparent; color: inherit; font: inherit; font-size: var(--t-sm); cursor: pointer; transition: transform .15s ease, background .15s ease; }
+.fxm__chip:hover { transform: translateY(-1px); }
+.fxm__chip[aria-pressed='true'] { background: var(--brand); border-color: var(--brand); color: #fff; }
+.fxm__row { display: grid; gap: 10px; align-items: end; grid-template-columns: minmax(0, 1fr); }
+.fxm__preview { display: grid; gap: 6px; padding: 10px 12px; border-radius: var(--r-sm, 10px); background: color-mix(in srgb, var(--brand) 7%, transparent); }
+.fxm__preview p { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 4px 12px; min-width: 0; }
+.fxm__preview span { color: var(--ink-3); font-size: var(--t-sm); }
+.fxm__preview strong { font-variant-numeric: tabular-nums; overflow-wrap: anywhere; }
+@media (min-width: 640px) { .fxm__row { grid-template-columns: minmax(0, 260px) auto; } }
+@keyframes fxm-in { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: none; } }
+@media (prefers-reduced-motion: reduce) { .fxm { animation: none; } .fxm__chip { transition: none; } }

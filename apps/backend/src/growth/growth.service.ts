@@ -125,7 +125,8 @@ export class GrowthService {
     const targetCurrency = this.currencyOf(dto.targetCurrency);
     const now = new Date();
 
-    const market = currency === targetCurrency ? dto.amount : await this.rates.convert(dto.amount, currency, targetCurrency, clientId);
+    // v7.8 : le taux garanti part du taux publié moins la marge de change de la société (le client voit et obtient ce taux-là), puis la marge de garantie.
+    const market = currency === targetCurrency ? dto.amount : (await this.rates.convertForCustomer(dto.amount, currency, targetCurrency, clientId)).converted;
     // audit argent (M2) : la marge s'applique seulement à une vraie conversion ; elle est incluse dans le montant et le taux garantis,
     // donc le client voit (et obtient) exactement ce qui est affiché.
     const raw = currency === targetCurrency ? market : applyLockMargin(market, lockMarginPct());

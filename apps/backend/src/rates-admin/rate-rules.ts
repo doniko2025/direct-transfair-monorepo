@@ -73,3 +73,31 @@ export function assertValidRate(value: unknown): number {
   if (rate > MAX_RATE) throw new BadRequestException('Ce taux est trop élevé.');
   return rate;
 }
+
+
+// ── Marge de change de la société (v7.8) ─────────────────────────────────────────────────────────────────────────────────────────────────
+/** Marge de change maximale réglable (en %). Au-delà, le client serait manifestement lésé : refus. */
+export const MAX_FX_MARGIN_PCT = 10;
+
+/** Valide une marge saisie (0 à MAX_FX_MARGIN_PCT, 2 décimales au plus) ; lève une erreur claire sinon. */
+export function assertValidFxMargin(value: unknown): number {
+  const n = typeof value === 'string' ? Number(value.replace(',', '.')) : (value as number);
+  if (typeof n !== 'number' || !Number.isFinite(n)) throw new BadRequestException('Marge de change invalide.');
+  if (n < 0) throw new BadRequestException('La marge de change ne peut pas être négative.');
+  if (n > MAX_FX_MARGIN_PCT) throw new BadRequestException(`La marge de change ne peut pas dépasser ${MAX_FX_MARGIN_PCT} %.`);
+  return Math.round(n * 100) / 100;
+}
+
+/** Facteur appliqué aux montants convertis pour un client : 1 − marge/100 (1 si la marge est absente ou invalide). */
+export function fxFactor(pct: unknown): number {
+  const n = Number(pct);
+  if (!Number.isFinite(n) || n <= 0) return 1;
+  return 1 - Math.min(n, MAX_FX_MARGIN_PCT) / 100;
+}
+
+/** Gain estimé de la société sur un envoi, dans la devise d'ENVOI : montant × marge (le gain brut en devise reçue, ramené au taux du marché). */
+export function fxMarginGain(amount: number, pct: unknown): number {
+  const n = Number(pct);
+  if (!Number.isFinite(n) || n <= 0 || !Number.isFinite(amount) || amount <= 0) return 0;
+  return Math.round(amount * Math.min(n, MAX_FX_MARGIN_PCT)) / 100;
+}

@@ -1,4 +1,5 @@
 // apps/web-admin/src/pages/rates/RatesPage.tsx
+// v2.1 : carte « Marge de change » (pourcentage retenu par la société sur chaque conversion client).
 // v2.0 : TAUX PAR SOCIÉTÉ. Chaque société fixe ses propres taux, indépendamment des autres.
 //   - Admin de société : fixe SES taux (le sens inverse se déduit) et consulte leur historique.
 //   - Super admin : LECTURE SEULE — il choisit une société et consulte ses taux, sans jamais en modifier.
@@ -31,6 +32,7 @@ import {
 import { plural, when } from '../../lib/supervisionRules';
 import { useResource } from '../../lib/useResource';
 import { useCurrentUser } from '../../providers/AuthProvider';
+import FxMarginCard from './FxMarginCard';
 import RateEditDialog from './RateEditDialog';
 
 type Filter = 'ALL' | RateCurrency;
@@ -116,7 +118,7 @@ export default function RatesPage() {
   const skip = isSuper && !clientId;
   const companyName = (companies.data ?? []).find((c) => c.id === clientId)?.name;
 
-  const rates = useResource(async () => (skip ? { pairs: [] as RatePair[] } : api.rates.list(clientId)), [clientId, skip]);
+  const rates = useResource(async () => (skip ? { pairs: [] as RatePair[], fxMarginPct: 0, maxFxMarginPct: 10 } : api.rates.list(clientId)), [clientId, skip]);
   const [filter, setFilter] = useState<Filter>('ALL');
   const [editing, setEditing] = useState<RatePair | null>(null);
   const [flash, setFlash] = useState<string | null>(null);
@@ -193,6 +195,10 @@ export default function RatesPage() {
           </Notice>
         ) : null}
       </div>
+
+      {rates.data ? (
+        <FxMarginCard current={rates.data.fxMarginPct ?? 0} max={rates.data.maxFxMarginPct} canEdit={canEdit} pairs={all} onSaved={done} />
+      ) : null}
 
       {(rates.loading && !rates.data) || (isSuper && companies.loading && !companies.data) ? (
         <div className="center-block">

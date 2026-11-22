@@ -4,6 +4,7 @@
 //   GET /rates-admin                    COMPANY_ADMIN : SES taux · SUPER_ADMIN : ?clientId= obligatoire, LECTURE SEULE
 //   GET /rates-admin/:pair/history      idem
 //   PATCH /rates-admin/:pair              COMPANY_ADMIN uniquement (SES taux) : { rate, confirmLargeChange? }
+//   GET   /rates-admin/margin             marge de change de la société (v7.8) · PATCH /rates-admin/margin : { fxMarginPct } COMPANY_ADMIN
 // Chaque société est libre de ses taux, indépendamment des autres : un administrateur de société ne lit ni n'écrit jamais ceux
 // d'une autre société (le clientId vient du jeton, jamais de la requête) ; le super admin ne peut qu'observer.
 // =========================================================
@@ -18,7 +19,7 @@ import { RolesGuard } from '../auth/roles.guard';
 import type { AuthUserPayload } from '../auth/types/auth-user-payload.type';
 import { Roles } from '../common/decorators/roles.decorator';
 import { PrismaService } from '../prisma/prisma.service';
-import { RateHistoryQueryDto, RatesScopeQueryDto, SetRateDto } from './dto/rates-admin.dto';
+import { RateHistoryQueryDto, RatesScopeQueryDto, SetFxMarginDto, SetRateDto } from './dto/rates-admin.dto';
 import { RatesAdminService } from './rates-admin.service';
 
 type AuthRequest = Request & { user?: AuthUserPayload };
@@ -59,6 +60,24 @@ export class RatesAdminController {
   @ApiOperation({ summary: 'Historique d’une paire (société)' })
   async history(@Req() req: AuthRequest, @Param('pair') pair: string, @Query() query: RateHistoryQueryDto) {
     return this.admin.history(await this.scopeOf(req, query), pair, query.limit);
+  }
+
+  @Get('margin')
+  @Roles(Role.SUPER_ADMIN, Role.COMPANY_ADMIN)
+  @ApiOperation({ summary: 'Marge de change de la société (gain sur le taux)' })
+  async margin(@Req() req: AuthRequest, @Query() query: RatesScopeQueryDto) {
+    return this.admin.getMargin(await this.scopeOf(req, query));
+  }
+
+  // ⚠️ Déclarée AVANT « :pair » : sinon « margin » serait pris pour une paire de devises.
+  @Patch('margin')
+  @Roles(Role.COMPANY_ADMIN)
+  @ApiOperation({ summary: 'Règle la marge de change de SA société (en %, 0 = aucune)' })
+  setMargin(@Req() req: AuthRequest, @Body() body: SetFxMarginDto) {
+    const user = req.user;
+    if (!user) throw new ForbiddenException('Non authentifié');
+    if (!user.clientId) throw new ForbiddenException('Aucune société rattachée à ce compte.');
+    return this.admin.setMargin(user, user.clientId, body.fxMarginPct);
   }
 
   @Patch(':pair')

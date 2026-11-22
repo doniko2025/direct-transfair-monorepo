@@ -395,6 +395,8 @@ export interface ExchangeRate {
   inverseRate?: number;
   changePercent?: number;
   updatedAt?: ISODate;
+  /** Marge de change de la société (%), publiée avec chaque taux : le client reçoit taux × (1 − marge/100). */
+  fxMarginPct?: number;
 }
 
 export interface ExchangeRateHistory {

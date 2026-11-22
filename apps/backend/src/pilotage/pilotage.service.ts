@@ -17,6 +17,7 @@ import { MailService } from '../mail/mail.service';
 import { dayBounds, localDay, parseDay, parseTzOffset, periodBounds, toCsv } from '../merchants/merchant-extras';
 import { NotificationsService } from '../notifications/notifications.service';
 import { PrismaService } from '../prisma/prisma.service';
+import { fxMarginGain } from '../rates-admin/rate-rules';
 import type { CloseCashDto, ReviewClosingDto, UpsertLiquidityRuleDto, UpsertTargetDto } from './dto/pilotage.dto';
 import {
   AgentActivity,
@@ -447,6 +448,7 @@ export class PilotageService {
       _count: { _all: true },
       _sum: { amount: true, fees: true, receivedAmount: true, senderCommission: true, payerCommission: true, platformCommission: true },
     });
+    const gains = await this.fxGains(clientId, from, to);
     return groups
       .map((g) =>
         toCorridorRow({
@@ -458,9 +460,25 @@ export class PilotageService {
           fees: num(g._sum.fees),
           agentCommissions: num(g._sum.senderCommission) + num(g._sum.payerCommission),
           platformShare: num(g._sum.platformCommission),
+          fxGain: gains.get(`${String(g.currency)}|${g.targetCurrency ? String(g.targetCurrency) : ''}`) ?? 0,
         }),
       )
       .sort((a, b) => b.net - a.net);
+  }
+
+  /** Gain de change estimé par couloir : Σ montant envoyé × marge de la société appliquée à l'opération (devise d'envoi). */
+  private async fxGains(clientId: number, from: Date, to: Date): Promise<Map<string, number>> {
+    const rows = await this.prisma.transaction.findMany({
+      where: { clientId, type: 'TRANSFER', direction: 'OUTBOUND', deletedAt: null, status: { in: [...EARNING_STATUSES] }, createdAt: { gte: from, lt: to }, fxMarginPct: { not: null } },
+      select: { currency: true, targetCurrency: true, amount: true, fxMarginPct: true },
+    });
+    const out = new Map<string, number>();
+    for (const r of rows) {
+      const cur = String(r.currency);
+      const key = `${cur}|${r.targetCurrency ? String(r.targetCurrency) : ''}`;
+      out.set(key, round((out.get(key) ?? 0) + fxMarginGain(num(r.amount), num(r.fxMarginPct)), cur));
+    }
+    return out;
   }
 
   async profitability(user: AuthUserPayload, q: { from?: string; to?: string; tz?: unknown }) {
@@ -602,8 +620,8 @@ export class PilotageService {
     const p = this.period(q);
     const corridors = await this.corridors(clientId, p.from, p.to);
     const csv = toCsv(
-      ['Couloir', 'Opérations', 'Montant envoyé', 'Montant reçu', 'Frais perçus', 'Commissions agents', 'Part plateforme', 'Marge nette estimée', 'Marge %'],
-      corridors.map((c) => [c.corridor, c.count, c.sent, c.received, c.fees, c.agentCommissions, c.platformShare, c.net, c.marginPct]),
+      ['Couloir', 'Opérations', 'Montant envoyé', 'Montant reçu', 'Frais perçus', 'Gain de change', 'Commissions agents', 'Part plateforme', 'Marge nette estimée', 'Marge %'],
+      corridors.map((c) => [c.corridor, c.count, c.sent, c.received, c.fees, c.fxGain, c.agentCommissions, c.platformShare, c.net, c.marginPct]),
     );
     return { filename: `rentabilite_${p.fromDay}_${p.toDay}.csv`, csv };
   }
@@ -655,14 +673,14 @@ export class PilotageService {
 
   private reportHtml(company: string, r: Awaited<ReturnType<PilotageService['monthlyReport']>>): string {
     const money = (n: number, cur: string) => `${n.toLocaleString('fr-FR')} ${cur}`;
-    const totals = r.totals.map((t) => `<tr><td>${esc(t.currency)}</td><td>${t.count}</td><td>${esc(money(t.sent, t.currency))}</td><td>${esc(money(t.fees, t.currency))}</td><td><b>${esc(money(t.net, t.currency))}</b></td></tr>`).join('');
+    const totals = r.totals.map((t) => `<tr><td>${esc(t.currency)}</td><td>${t.count}</td><td>${esc(money(t.sent, t.currency))}</td><td>${esc(money(t.fees, t.currency))}</td><td>${esc(money(t.fxGain, t.currency))}</td><td><b>${esc(money(t.net, t.currency))}</b></td></tr>`).join('');
     const agents = r.topAgents.map((a) => `<li>${esc(a.name)} — ${a.operations} opération(s)</li>`).join('');
     return `<div style="font-family:Arial,sans-serif;max-width:560px;margin:auto;color:#1c2a22">
 <h2 style="margin:0 0 4px">Rapport d'activité — ${esc(r.month)}</h2><p style="margin:0 0 16px;color:#5b6b61">${esc(company)}</p>
-<table style="width:100%;border-collapse:collapse;font-size:14px" border="0" cellpadding="6"><tr style="background:#eef3ef"><th align="left">Devise</th><th align="left">Envois</th><th align="left">Volume</th><th align="left">Frais</th><th align="left">Marge nette est.</th></tr>${totals || '<tr><td colspan="5">Aucun envoi ce mois-ci.</td></tr>'}</table>
+<table style="width:100%;border-collapse:collapse;font-size:14px" border="0" cellpadding="6"><tr style="background:#eef3ef"><th align="left">Devise</th><th align="left">Envois</th><th align="left">Volume</th><th align="left">Frais</th><th align="left">Gain de change</th><th align="left">Marge nette est.</th></tr>${totals || '<tr><td colspan="6">Aucun envoi ce mois-ci.</td></tr>'}</table>
 ${agents ? `<h3>Meilleurs agents</h3><ol>${agents}</ol>` : ''}
 <p>Clôtures de caisse : ${r.closings.count} (dont ${r.closings.withVariance} avec écart, ${r.closings.unreviewed} à examiner).</p>
-<p style="color:#5b6b61;font-size:12px">La marge nette est une estimation : frais perçus moins commissions des agents et part de la plateforme.</p></div>`;
+<p style="color:#5b6b61;font-size:12px">La marge nette est une estimation : frais perçus et gain de change (marge de change de la société), moins commissions des agents et part de la plateforme.</p></div>`;
   }
 }
 

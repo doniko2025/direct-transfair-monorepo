@@ -103,7 +103,7 @@ function setup(opts: { sender?: Json; failCreditOn?: string; limitsFail?: boolea
   };
 
   const feeSchedule: Json = { quote: jest.fn().mockResolvedValue({ fees: 1000 }) };
-  const rates: Json = { convert: jest.fn().mockImplementation(async (a: number) => a) };
+  const rates: Json = { convert: jest.fn().mockImplementation(async (a: number) => a), convertForCustomer: jest.fn().mockImplementation(async (a: number) => ({ converted: a, marginPct: 0 })), fxMarginPct: jest.fn().mockResolvedValue(0) };
   const none: Json = new Proxy({}, { get: () => jest.fn().mockResolvedValue(undefined) });
   const thresholds: Json = { thresholdFor: jest.fn().mockResolvedValue(500_000) };
   const limits: Json = {

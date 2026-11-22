@@ -31,6 +31,7 @@ import { Text, TextInput } from '../../components/ui/Text';
 import { useT } from "../../providers/I18nProvider";
 import { getLocale } from "../../i18n/runtime";
 import { groupAmount } from "../../utils/amount";
+import { customerFactor } from "../../utils/rateLookup";
 // ─── 5 devises de l'application ──────────────────────────
 const APP_CURRENCIES = [
   { code: "EUR", flag: "🇪🇺", symbol: "€"    },
@@ -91,12 +92,14 @@ function dynamicFontSize(length: number): number {
   return 15;
 }
 
+// Taux NET de la marge de change de la société (customerFactor) : c'est celui que le client obtient réellement.
 function findRate(rates: any[], from: string, to: string): number | null {
   if (from === to) return 1;
+  const f = customerFactor(rates);
   const direct = rates.find((r) => normPair(r.pair) === `${from}/${to}` || r.pair === `${from}_${to}`);
-  if (direct?.rate > 0) return Number(direct.rate);
+  if (direct?.rate > 0) return Number(direct.rate) * f;
   const inverse = rates.find((r) => normPair(r.pair) === `${to}/${from}` || r.pair === `${to}_${from}`);
-  if (inverse?.rate > 0) return 1 / Number(inverse.rate);
+  if (inverse?.rate > 0) return (1 / Number(inverse.rate)) * f;
   return null;
 }
 

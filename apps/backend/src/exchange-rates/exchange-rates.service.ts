@@ -1,8 +1,10 @@
 // apps/backend/src/exchange-rates/exchange-rates.service.ts
+// ✅ v2.1 : MARGE DE CHANGE — chaque ligne publiée porte `fxMarginPct` (marge de la société, en %) et /convert retient la marge : un client voit et obtient le même résultat que l'envoi.
 // ✅ v2.0 : TAUX PAR SOCIÉTÉ — chaque société (COMPANY_ADMIN) fixe ses propres taux, indépendamment des autres.
 //    Lectures publiques : la société est désignée par son code public (?code=FLASH). Écriture : administrateur de la société.
 import { Injectable, NotFoundException } from '@nestjs/common';
 import { PrismaService }                  from '../prisma/prisma.service';
+import { fxFactor }                       from '../rates-admin/rate-rules';
 
 @Injectable()
 export class ExchangeRatesService {
@@ -16,13 +18,23 @@ export class ExchangeRatesService {
     return client.id;
   }
 
+  /** Marge de change de la société, en % (0 si aucune). */
+  private async marginPct(clientId: number | null): Promise<number> {
+    if (clientId === null) return 0;
+    const row = await this.prisma.client.findUnique({ where: { id: clientId }, select: { fxMarginPct: true } });
+    const n = Number(row?.fxMarginPct ?? 0);
+    return Number.isFinite(n) && n > 0 ? n : 0;
+  }
+
   // ── Tous les taux actifs d'UNE société (sans société : aucun taux n'est publié) ──
+  // Les taux restent les taux publiés ; chaque ligne porte `fxMarginPct` : les applications affichent « taux × (1 − marge) », ce que le client obtient.
   async findAll(clientId: number | null) {
     if (clientId === null) return [];
-    return this.prisma.exchangeRate.findMany({
-      where:   { clientId, isActive: true },
-      orderBy: { pair: 'asc' },
-    });
+    const [rows, fxMarginPct] = await Promise.all([
+      this.prisma.exchangeRate.findMany({ where: { clientId, isActive: true }, orderBy: { pair: 'asc' } }),
+      this.marginPct(clientId),
+    ]);
+    return rows.map((r) => ({ ...r, fxMarginPct }));
   }
 
   // ── Taux par paire (ex: "EUR_XOF") ──────────────────────
@@ -75,9 +87,10 @@ export class ExchangeRatesService {
 
     if (clientId !== null) {
       // Paire directe
+      const factor = fxFactor(await this.marginPct(clientId));   // marge de change de la société (1 si aucune)
       const direct = await this.prisma.exchangeRate.findFirst({ where: { clientId, pair: directPair } });
       if (direct) {
-        const rate            = Number(direct.rate);
+        const rate            = Number(direct.rate) * factor;
         const convertedAmount = Math.round(amount * rate * 100) / 100;
         return { amount, rate, convertedAmount };
       }
@@ -85,7 +98,7 @@ export class ExchangeRatesService {
       // Paire inverse
       const inverse = await this.prisma.exchangeRate.findFirst({ where: { clientId, pair: inversePair } });
       if (inverse) {
-        const rate            = 1 / Number(inverse.rate);
+        const rate            = (1 / Number(inverse.rate)) * factor;
         const convertedAmount = Math.round(amount * rate * 100) / 100;
         return { amount, rate, convertedAmount };
       }

@@ -27,19 +27,21 @@ import { useUI } from "../ui";
 import { CurrencyFlag, HomeButton } from "./HomeParts";
 import { amountFontFor, decimalsFor, fmtMoney, fmtRate, groupAmount, parseAmount, roundTo, sanitizeAmountInput, toInputText } from "../../utils/amount";
 import { useT } from "../../providers/I18nProvider";
+import { customerFactor } from "../../utils/rateLookup";
 
 const TARGET_KEY = "dt.homeTarget";
 const PREFERRED_TARGETS = ["GNF", "XOF"];
 
 const normPair = (p: string) => String(p ?? "").replace("_", "/");
 
-/** Même formule que app/(tabs)/rates.tsx : paire directe, sinon l'inverse de la paire opposée. */
+/** Même formule que app/(tabs)/rates.tsx : paire directe, sinon l'inverse de la paire opposée — NET de la marge de change de la société. */
 function findRate(rates: ExchangeRate[], from: string, to: string): number | null {
   if (from === to) return 1;
+  const f = customerFactor(rates);
   const direct = rates.find((r) => normPair(r.pair) === `${from}/${to}`);
-  if (direct && Number(direct.rate) > 0) return Number(direct.rate);
+  if (direct && Number(direct.rate) > 0) return Number(direct.rate) * f;
   const inverse = rates.find((r) => normPair(r.pair) === `${to}/${from}`);
-  if (inverse && Number(inverse.rate) > 0) return 1 / Number(inverse.rate);
+  if (inverse && Number(inverse.rate) > 0) return (1 / Number(inverse.rate)) * f;
   return null;
 }
 

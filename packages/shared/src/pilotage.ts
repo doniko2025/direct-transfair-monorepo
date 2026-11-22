@@ -124,7 +124,9 @@ export interface CorridorRow {
   fees: number;
   agentCommissions: number;
   platformShare: number;
-  /** Marge nette estimée : frais − commissions des agents − part de la plateforme. */
+  /** Gain estimé sur la marge de change de la société (devise d'envoi). */
+  fxGain: number;
+  /** Marge nette estimée : frais + gain de change − commissions des agents − part de la plateforme. */
   net: number;
   marginPct: number;
 }
@@ -134,6 +136,7 @@ export interface PilotageCurrencyTotal {
   count: number;
   sent: number;
   fees: number;
+  fxGain: number;
   net: number;
 }
 

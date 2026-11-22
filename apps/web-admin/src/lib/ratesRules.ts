@@ -103,3 +103,41 @@ export function changeTone(change: number | null | undefined): Tone {
 export function pairTitle(base: string, quote: string): string {
   return `${base} → ${quote}`;
 }
+
+
+// ── Marge de change de la société ───────────────────────
+
+/** Mêmes bornes que le serveur (rates-admin/rate-rules.ts). */
+export const MAX_FX_MARGIN_PCT = 10;
+export const FX_MARGIN_PRESETS: readonly number[] = [0, 0.5, 1, 1.5, 2, 3];
+
+export interface ParsedMargin {
+  value: number | null;
+  error: string | null;
+}
+
+/** Lit une marge saisie à la française (« 1,5 »), 0 à 10 %, 2 décimales au plus. Saisie vide : value = null sans erreur. */
+export function parseMargin(raw: string, max = MAX_FX_MARGIN_PCT): ParsedMargin {
+  const text = raw.replace(/[\s  ]/g, '').replace(',', '.').replace(/%$/, '');
+  if (text === '') return { value: null, error: null };
+  if (!/^\d+(\.\d{1,2})?$/.test(text)) return { value: null, error: 'Saisissez un pourcentage, par exemple 1,5 (2 décimales au plus).' };
+  const value = Number(text);
+  if (value > max) return { value: null, error: `La marge ne peut pas dépasser ${max} %.` };
+  return { value, error: null };
+}
+
+export function formatMargin(pct: number | null | undefined): string {
+  if (pct === null || pct === undefined || !Number.isFinite(pct)) return '—';
+  return `${pct.toLocaleString('fr-FR', { maximumFractionDigits: 2 })} %`;
+}
+
+/** Taux que voit le client : le taux publié diminué de la marge. */
+export function customerRate(rate: number, marginPct: number): number {
+  return marginPct > 0 ? rate * (1 - Math.min(marginPct, MAX_FX_MARGIN_PCT) / 100) : rate;
+}
+
+/** Couple servant d'exemple : EUR → GNF, EUR → XOF, puis le premier couple dont un taux est fixé. */
+export function examplePair(pairs: readonly RatePair[]): RatePair | null {
+  const ok = pairs.filter((p) => p.rate !== null);
+  return ok.find((p) => p.pair === 'EUR_GNF') ?? ok.find((p) => p.pair === 'EUR_XOF') ?? ok[0] ?? null;
+}

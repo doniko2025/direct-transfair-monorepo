@@ -77,14 +77,24 @@ describe('rentabilité', () => {
     expect(row.marginPct).toBe(50);
   });
 
+  it('le gain de change s\'ajoute aux revenus : frais 0 mais marge de change > 0', () => {
+    const row = toCorridorRow({ currency: 'EUR', targetCurrency: 'GNF', count: 4, sent: 1000, received: 0, fees: 0, agentCommissions: 0, platformShare: 0, fxGain: 20 });
+    expect(row.fxGain).toBe(20);
+    expect(row.net).toBe(20);
+    expect(row.marginPct).toBe(100);
+    const mixed = toCorridorRow({ currency: 'EUR', targetCurrency: 'GNF', count: 1, sent: 100, received: 0, fees: 5, agentCommissions: 1, platformShare: 1, fxGain: 2 });
+    expect(mixed.net).toBe(5);
+    expect(totalsByCurrency([row, mixed])).toEqual([{ currency: 'EUR', count: 5, sent: 1100, fees: 5, fxGain: 22, net: 25 }]);
+  });
+
   it('marge 0 % sans frais, et totaux par devise sans mélanger les devises', () => {
     const a = toCorridorRow({ currency: 'EUR', targetCurrency: 'GNF', count: 1, sent: 10, received: 0, fees: 0, agentCommissions: 0, platformShare: 0 });
     const b = toCorridorRow({ currency: 'EUR', targetCurrency: 'XOF', count: 2, sent: 100, received: 0, fees: 10, agentCommissions: 2, platformShare: 1 });
     const c = toCorridorRow({ currency: 'XOF', targetCurrency: null, count: 1, sent: 5000, received: 0, fees: 100, agentCommissions: 0, platformShare: 0 });
     expect(a.marginPct).toBe(0);
     expect(totalsByCurrency([a, b, c])).toEqual([
-      { currency: 'EUR', count: 3, sent: 110, fees: 10, net: 7 },
-      { currency: 'XOF', count: 1, sent: 5000, fees: 100, net: 100 },
+      { currency: 'EUR', count: 3, sent: 110, fees: 10, fxGain: 0, net: 7 },
+      { currency: 'XOF', count: 1, sent: 5000, fees: 100, fxGain: 0, net: 100 },
     ]);
   });
 });

@@ -1,6 +1,8 @@
 // apps/backend/src/rates/rates.service.ts
 // =========================================================
-// RATES SERVICE v5.0 — Direct Transf'air
+// RATES SERVICE v5.1 — Direct Transf'air
+// ✅ v5.1 : MARGE DE CHANGE PAR SOCIÉTÉ (Client.fxMarginPct). `convertForCustomer` / `fxMarginPct` : conversion faite POUR UN CLIENT (envoi, taux garanti,
+//    taux affichés) = taux publié × (1 − marge). `convert` / `getRateFor` restent BRUTS (limites, frais, trésorerie, rapprochements : jamais de marge).
 // ✅ v5.0 : TAUX PAR SOCIÉTÉ. Chaque société (COMPANY_ADMIN) fixe ses propres taux, indépendamment des autres : toutes les lectures
 //    et écritures sont filtrées par `clientId`. Le super admin ne fixe plus aucun taux. Aucun repli sur les taux d'une autre société :
 //    une société sans taux pour une paire voit la conversion refusée (503) jusqu'à ce que SON administrateur la renseigne.
@@ -18,7 +20,7 @@
 import { Injectable, Logger, NotFoundException, OnApplicationBootstrap, ServiceUnavailableException } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { candidatePairs, resolveMaxAgeMs, resolveRate } from './rate-resolver';
-import { CANONICAL_PAIRS } from '../rates-admin/rate-rules';
+import { CANONICAL_PAIRS, fxFactor } from '../rates-admin/rate-rules';
 
 /** Âge maximal d'un taux : voir `resolveMaxAgeMs` (48 h par défaut en production, « 0 » pour désactiver). */
 const maxAgeMs = (): number | undefined => resolveMaxAgeMs();
@@ -135,5 +137,24 @@ export class RatesService implements OnApplicationBootstrap {
   async convert(amount: number, from: string, to: string, clientId?: number | null): Promise<number> {
     const rate = await this.getRateFor(from, to, clientId);
     return amount * rate;
+  }
+
+  /** Marge de change de la société, en % (0 si aucune société ou aucune marge réglée). */
+  async fxMarginPct(clientId?: number | null): Promise<number> {
+    if (clientId == null) return 0;
+    const row = await this.prisma.client.findUnique({ where: { id: clientId }, select: { fxMarginPct: true } });
+    const n = Number(row?.fxMarginPct ?? 0);
+    return Number.isFinite(n) && n > 0 ? n : 0;
+  }
+
+  /**
+   * Conversion faite POUR UN CLIENT : montant × taux publié × (1 − marge de la société). Même devise : aucune marge.
+   * Renvoie aussi la marge appliquée (en %) pour la figer sur la transaction.
+   */
+  async convertForCustomer(amount: number, from: string, to: string, clientId?: number | null): Promise<{ converted: number; marginPct: number }> {
+    if (from.toUpperCase().trim() === to.toUpperCase().trim()) return { converted: amount, marginPct: 0 };
+    const gross = await this.convert(amount, from, to, clientId);
+    const marginPct = await this.fxMarginPct(clientId);
+    return { converted: gross * fxFactor(marginPct), marginPct };
   }
 }

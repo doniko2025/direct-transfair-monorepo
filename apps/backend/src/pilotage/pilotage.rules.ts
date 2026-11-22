@@ -128,13 +128,16 @@ export interface CorridorRaw {
   fees: number;
   agentCommissions: number;
   platformShare: number;
+  /** Gain estimé sur la marge de change de la société (devise d'envoi). 0 si aucune marge. */
+  fxGain?: number;
 }
 
 export interface CorridorRow extends CorridorRaw {
   corridor: string;
-  /** Frais − commissions des agents − part de la plateforme. Estimation : voir LISEZ-MOI-PILOTAGE.md. */
+  fxGain: number;
+  /** Frais + gain de change − commissions des agents − part de la plateforme. Estimation : voir LISEZ-MOI-PILOTAGE.md. */
   net: number;
-  /** Marge nette en % des frais (0 si aucun frais). */
+  /** Marge nette en % des revenus (frais + gain de change ; 0 si aucun revenu). */
   marginPct: number;
 }
 
@@ -143,19 +146,24 @@ export function corridorLabel(currency: string, targetCurrency: string | null): 
 }
 
 export function toCorridorRow(raw: CorridorRaw): CorridorRow {
-  const net = round(raw.fees - raw.agentCommissions - raw.platformShare, raw.currency);
-  const marginPct = raw.fees > 0 ? Math.round((net / raw.fees) * 1000) / 10 : 0;
-  return { ...raw, corridor: corridorLabel(raw.currency, raw.targetCurrency), net, marginPct };
+  const fxGain = round(raw.fxGain ?? 0, raw.currency);
+  const revenue = raw.fees + fxGain;
+  const net = round(revenue - raw.agentCommissions - raw.platformShare, raw.currency);
+  const marginPct = revenue > 0 ? Math.round((net / revenue) * 1000) / 10 : 0;
+  return { ...raw, fxGain, corridor: corridorLabel(raw.currency, raw.targetCurrency), net, marginPct };
 }
 
 /** Totaux par devise d'envoi (on n'additionne jamais deux devises). */
-export function totalsByCurrency(rows: readonly CorridorRow[]): { currency: string; count: number; sent: number; fees: number; net: number }[] {
-  const map = new Map<string, { currency: string; count: number; sent: number; fees: number; net: number }>();
+export interface CurrencyTotalRow { currency: string; count: number; sent: number; fees: number; fxGain: number; net: number }
+
+export function totalsByCurrency(rows: readonly CorridorRow[]): CurrencyTotalRow[] {
+  const map = new Map<string, CurrencyTotalRow>();
   for (const r of rows) {
-    const t = map.get(r.currency) ?? { currency: r.currency, count: 0, sent: 0, fees: 0, net: 0 };
+    const t = map.get(r.currency) ?? { currency: r.currency, count: 0, sent: 0, fees: 0, fxGain: 0, net: 0 };
     t.count += r.count;
     t.sent = round(t.sent + r.sent, r.currency);
     t.fees = round(t.fees + r.fees, r.currency);
+    t.fxGain = round(t.fxGain + r.fxGain, r.currency);
     t.net = round(t.net + r.net, r.currency);
     map.set(r.currency, t);
   }

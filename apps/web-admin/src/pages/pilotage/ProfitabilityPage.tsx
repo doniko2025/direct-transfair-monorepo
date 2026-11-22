@@ -1,6 +1,6 @@
 // src/pages/pilotage/ProfitabilityPage.tsx
 // Rentabilité par couloir (devise d'envoi → devise reçue) : volume, frais perçus, commissions des agents, part de la plateforme
-// et marge nette ESTIMÉE (frais − commissions des agents − part de la plateforme). Exports CSV comptables.
+// et marge nette ESTIMÉE (frais + gain de change − commissions des agents − part de la plateforme). Exports CSV comptables.
 
 import { useState } from 'react';
 import type { PilotageExport } from '@direct-transfair/shared';
@@ -54,7 +54,7 @@ export default function ProfitabilityPage() {
           {data.totals.length > 0 ? (
             <KpiGrid label="Totaux par devise" className="dash-kpis--stats dash-kpis--grid">
               {data.totals.map((t) => (
-                <KpiCard key={t.currency} icon="chart" tone="ok" label={`Marge nette · ${t.currency}`} value={formatAmount(t.net, t.currency)} note={`${t.count} envoi(s) · frais ${formatAmount(t.fees, t.currency)}`} />
+                <KpiCard key={t.currency} icon="chart" tone="ok" label={`Marge nette · ${t.currency}`} value={formatAmount(t.net, t.currency)} note={`${t.count} envoi(s) · frais ${formatAmount(t.fees, t.currency)}${t.fxGain > 0 ? ` · change ${formatAmount(t.fxGain, t.currency)}` : ''}`} />
               ))}
             </KpiGrid>
           ) : null}
@@ -73,11 +73,12 @@ export default function ProfitabilityPage() {
                     <Pill tone={c.net > 0 ? 'ok' : 'warn'}>{pctLabel(c.marginPct)}</Pill>
                   </div>
                   <div className="pil-fig pil-fig--big"><span>Marge nette estimée</span><strong>{formatAmount(c.net, c.currency)}</strong></div>
-                  <div className="pil-bar" role="img" aria-label={`Marge ${pctLabel(c.marginPct)} des frais`}>
+                  <div className="pil-bar" role="img" aria-label={`Marge ${pctLabel(c.marginPct)} des revenus`}>
                     <div className="pil-bar__fill" style={{ width: `${Math.max(3, Math.round((Math.abs(c.net) / best) * 100))}%` }} />
                   </div>
                   <div className="pil-figs pil-figs--3">
                     <div className="pil-fig"><span>Frais perçus</span><strong>{formatAmount(c.fees, c.currency)}</strong></div>
+                    {c.fxGain > 0 ? <div className="pil-fig"><span>Gain de change</span><strong>{formatAmount(c.fxGain, c.currency)}</strong></div> : null}
                     <div className="pil-fig"><span>Commissions agents</span><strong>{formatAmount(c.agentCommissions, c.currency)}</strong></div>
                     <div className="pil-fig"><span>Part plateforme</span><strong>{formatAmount(c.platformShare, c.currency)}</strong></div>
                   </div>
@@ -92,7 +93,7 @@ export default function ProfitabilityPage() {
             <Button variant="secondary" icon="download" busy={exporting === 'transactions'} onClick={() => void download('transactions')}>Toutes les opérations</Button>
             <Button variant="secondary" icon="download" busy={exporting === 'closings'} onClick={() => void download('closings')}>Clôtures de caisse</Button>
           </div>
-          <p className="pil-foot">Période du {range.from} au {range.to}. La marge est une estimation : elle ne tient pas compte des coûts de structure ni de l’écart entre votre taux et le taux du marché.</p>
+          <p className="pil-foot">Période du {range.from} au {range.to}. La marge est une estimation : frais perçus et gain de change (votre marge de change, réglée dans « Taux de change »), moins commissions et part de la plateforme. Elle ne tient pas compte des coûts de structure ni de l’écart entre votre taux et le taux du marché.</p>
         </>
       )}
     </div>

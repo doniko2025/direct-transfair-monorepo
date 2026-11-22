@@ -547,6 +547,10 @@ model Client {
   locale         String?      @default("fr-GN")
   defaultCurrency CurrencyCode @default(GNF)
 
+  // ── Marge de change (%) ✅ v7.8 — retenue sur CHAQUE conversion de devise faite pour un client (envoi, taux garanti, taux affichés) : c'est le
+  // gain de la société sur le change quand ses frais d'envoi sont à 0. 0 = aucune marge (taux publié appliqué tel quel). Réglée par l'admin de la société.
+  fxMarginPct Decimal @default(0) @db.Decimal(5, 2)
+
   // ── Portail web dédié ✅ v5.1 ─────────────────────────
   subdomain    String? @unique  // Ex: "flash" → flash.direct-transfer.com
   customDomain String? @unique  // Ex: "www.flash-transfer.com" (domaine custom CNAME)
@@ -1426,6 +1430,7 @@ model Transaction {
   currency       CurrencyCode
   targetCurrency CurrencyCode?
   exchangeRate   Float?                       // Taux au moment de la transaction
+  fxMarginPct    Decimal?     @db.Decimal(5, 2) // ✅ v7.8 — marge de change (%) de la société appliquée à cet envoi (null = avant la marge / même devise)
   receivedAmount Decimal?     @db.Decimal(18, 4) // Montant reçu après conversion
 
   // Commissions

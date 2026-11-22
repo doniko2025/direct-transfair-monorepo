@@ -1576,9 +1576,18 @@ export class TransactionsService {
     if (rateLockId) {
       lockedRate = await resolveRateLock(this.prisma, { lockId: rateLockId, userId: senderId, currency, targetCurrency, amount: Number(amount) });
     }
-    const rawConverted    = lockedRate
-      ? lockedRate.rate * Number(amount)
-      : await this.ratesService.convert(Number(amount), currency, targetCurrency, user.clientId ?? null);
+    // ✅ v7.8 — marge de change de la société : le taux garanti l'inclut déjà (taux garanti = taux publié × (1 − marge) × marge de garantie) ; sans garantie,
+    // la conversion la retient ici. La marge appliquée est FIGÉE sur la transaction (gain estimé de la page Rentabilité).
+    let fxMarginPct: number | null = null;
+    let rawConverted: number;
+    if (lockedRate) {
+      rawConverted = lockedRate.rate * Number(amount);
+      fxMarginPct  = currency !== targetCurrency ? await this.ratesService.fxMarginPct(user.clientId ?? null) : null;
+    } else {
+      const conv   = await this.ratesService.convertForCustomer(Number(amount), currency, targetCurrency, user.clientId ?? null);
+      rawConverted = conv.converted;
+      fxMarginPct  = currency !== targetCurrency ? conv.marginPct : null;
+    }
     const convertedAmount = lockedRate ? lockedRate.receivedAmount : roundToCurrency(rawConverted, targetCurrency);
     if (!(convertedAmount > 0)) {
       throw new BadRequestException('Montant trop faible : le montant reçu serait nul après conversion.');
@@ -1642,6 +1651,7 @@ export class TransactionsService {
           targetCurrency,
           receivedAmount,
           exchangeRate,
+          fxMarginPct:    fxMarginPct !== null && fxMarginPct > 0 ? new Prisma.Decimal(fxMarginPct) : null, // ✅ v7.8 — marge de change figée
           payoutMethod:   effectiveMethod,
           status,
           senderId,

@@ -1,6 +1,7 @@
 // apps/backend/src/rates-admin/rates-admin.service.ts
 // =========================================================
-// RATES ADMIN v2.0 — administration des taux de change PAR SOCIÉTÉ
+// RATES ADMIN v2.1 — administration des taux de change PAR SOCIÉTÉ
+// ✅ v2.1 : MARGE DE CHANGE de la société (getMargin / setMargin, journalisée) ; list() renvoie aussi `fxMarginPct`.
 // ✅ v2.0 : chaque société fixe ses propres taux, indépendamment des autres (clientId). L'administrateur de société les modifie ;
 //    le super admin les consulte en LECTURE SEULE (sélecteur de société) et n'en fixe aucun.
 //
@@ -21,7 +22,7 @@ import type { AuthUserPayload } from '../auth/types/auth-user-payload.type';
 import { PrismaService } from '../prisma/prisma.service';
 import { RatesService } from '../rates/rates.service';
 import type { SetRateDto } from './dto/rates-admin.dto';
-import { CANONICAL_PAIRS, LARGE_CHANGE_PERCENT, normalizePair, parseCanonicalPair } from './rate-rules';
+import { assertValidFxMargin, CANONICAL_PAIRS, LARGE_CHANGE_PERCENT, MAX_FX_MARGIN_PCT, normalizePair, parseCanonicalPair } from './rate-rules';
 
 /** Écart relatif au-delà duquel deux sens enregistrés séparément sont jugés incohérents. */
 const MISMATCH_TOLERANCE = 0.001;
@@ -99,7 +100,38 @@ export class RatesAdminService {
       };
     });
 
-    return { pairs };
+    return { pairs, ...(await this.getMargin(clientId)) };
+  }
+
+  // ───────────────────────────────────────────────────────
+  // Marge de change (v7.8) : gain de la société sur le taux, retenu sur chaque conversion faite pour un client
+  // ───────────────────────────────────────────────────────
+
+  async getMargin(clientId: number) {
+    const row = await this.prisma.client.findUnique({ where: { id: clientId }, select: { fxMarginPct: true } });
+    return { fxMarginPct: Number(row?.fxMarginPct ?? 0), maxFxMarginPct: MAX_FX_MARGIN_PCT };
+  }
+
+  /** Règle la marge de SA société (0 = aucune). Journalisée ; une valeur identique ne réécrit rien. */
+  async setMargin(user: AuthUserPayload, clientId: number, raw: unknown) {
+    const next = assertValidFxMargin(raw);
+    const { fxMarginPct: current } = await this.getMargin(clientId);
+    if (next === current) return { fxMarginPct: current, maxFxMarginPct: MAX_FX_MARGIN_PCT };
+    await this.prisma.$transaction(async (tx) => {
+      await tx.client.update({ where: { id: clientId }, data: { fxMarginPct: next } });
+      await tx.auditLog.create({
+        data: {
+          userId: user.id,
+          clientId,
+          action: 'FX_MARGIN_UPDATE',
+          entity: 'Client',
+          entityId: String(clientId),
+          details: { from: current, to: next },
+          successful: true,
+        },
+      });
+    });
+    return { fxMarginPct: next, maxFxMarginPct: MAX_FX_MARGIN_PCT };
   }
 
   // ───────────────────────────────────────────────────────
