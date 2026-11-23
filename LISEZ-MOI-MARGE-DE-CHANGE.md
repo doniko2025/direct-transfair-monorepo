@@ -18,7 +18,7 @@ Exemple : taux publié EUR → GNF = 10 700, marge 2 % → le client obtient 10 
 **Mobile** : `utils/rateLookup.ts`, `services/{api.ts, types.ts}`, `components/home/ExpressSendCard.tsx`, `app/(tabs)/rates.tsx`
 
 ## Ce qui change
-- **API** : `GET /rates-admin` renvoie aussi `fxMarginPct` et `maxFxMarginPct` ; `GET/PATCH /rates-admin/margin` (écriture : admin de société ; super admin en lecture seule). Chaque changement est tracé (audit `FX_MARGIN_UPDATE`).
+- **API** : `GET /rates-admin` renvoie aussi `fxMarginPct` et `maxFxMarginPct` ; `GET/PATCH /rates-admin/margin` (écriture : admin de société ; super admin en lecture seule). Chaque changement est tracé (journal d’audit : action `EXCHANGE_RATE_UPDATE`, détail `kind: FX_MARGIN`, aucune nouvelle valeur d’enum).
 - **Taux publiés** (`GET /exchange-rates`) : chaque ligne porte `fxMarginPct`. Les taux restent les taux publiés ; les apps affichent taux × (1 − marge).
 - **Envoi / dépôt agent / verrouillage de taux** : le montant reçu est calculé avec le taux net. La marge appliquée est enregistrée sur la transaction (`Transaction.fxMarginPct`) pour une rentabilité exacte même si la marge change plus tard.
 - **Web-admin** : carte « Marge de change » en haut de la page Taux (valeurs rapides, saisie, exemple chiffré en direct). La page Rentabilité, le CSV et le rapport mensuel affichent le « Gain de change » ; la marge nette l'inclut.

@@ -86,7 +86,7 @@ describe('RatesAdminService — réglage de la marge', () => {
     const { svc, update, audit } = build(0);
     await expect(svc.setMargin(user, 5, '2,5')).resolves.toEqual({ fxMarginPct: 2.5, maxFxMarginPct: MAX_FX_MARGIN_PCT });
     expect(update).toHaveBeenCalledWith({ where: { id: 5 }, data: { fxMarginPct: 2.5 } });
-    expect(audit).toHaveBeenCalledWith({ data: expect.objectContaining({ action: 'FX_MARGIN_UPDATE', clientId: 5, details: { from: 0, to: 2.5 } }) });
+    expect(audit).toHaveBeenCalledWith({ data: expect.objectContaining({ action: 'EXCHANGE_RATE_UPDATE', clientId: 5, details: { kind: 'FX_MARGIN', from: 0, to: 2.5 } }) });
   });
   it('une valeur identique ne réécrit ni ne journalise', async () => {
     const { svc, prisma } = build(2);

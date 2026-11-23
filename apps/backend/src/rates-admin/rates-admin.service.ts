@@ -123,10 +123,10 @@ export class RatesAdminService {
         data: {
           userId: user.id,
           clientId,
-          action: 'FX_MARGIN_UPDATE',
+          action: 'EXCHANGE_RATE_UPDATE',
           entity: 'Client',
           entityId: String(clientId),
-          details: { from: current, to: next },
+          details: { kind: 'FX_MARGIN', from: current, to: next },
           successful: true,
         },
       });
