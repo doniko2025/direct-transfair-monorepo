@@ -27,14 +27,14 @@
       "softwareKeyboardLayoutMode": "resize",
       "adaptiveIcon": {
         "foregroundImage": "./assets/images/adaptive-icon.png",
-        "backgroundColor": "#0E3B2D"
+        "backgroundImage": "./assets/images/adaptive-background.png",
+        "monochromeImage": "./assets/images/monochrome-icon.png",
+        "backgroundColor": "#0F4430"
       },
       "package": "com.doniko.directtransfair",
       "permissions": [
         "android.permission.CAMERA",
-        "android.permission.READ_CONTACTS",
-        "android.permission.RECORD_AUDIO",
-        "android.permission.WRITE_CONTACTS"
+        "android.permission.READ_CONTACTS"
       ],
       "blockedPermissions": [
         "android.permission.RECORD_AUDIO",
@@ -85,9 +85,7 @@
       "router": {
         "origin": "https://directtransfair.app"
       },
-      "eas": {
-        "projectId": "dd024b9e-ccb1-4b9b-9a4a-c9b8b9fd06c1"
-      }
+      "eas": {}
     },
     "owner": "dftransfer"
   }

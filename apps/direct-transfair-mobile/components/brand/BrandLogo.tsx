@@ -9,7 +9,8 @@
 //     le contenant a donc exactement la forme du logo (fini le logo carré posé dans une tuile d'une autre forme).
 //   • Logo large (ex. texte + symbole) → largeur jusqu'à 2,4 × `size`, hauteur déduite du ratio : jamais déformé ni rogné.
 //   • Logo haut → hauteur `size`, largeur déduite.
-//   • Image introuvable / lien cassé / hors ligne → marque de secours (monogramme de la plateforme, ou icône sur la couleur d'accent).
+//   • Image introuvable / lien cassé / hors ligne → marque de secours : monogramme de la plateforme (société système) ou, pour une société,
+//     SES initiales sur sa couleur d'accent. Jamais le logo de la plateforme ni celui d'une autre société (séparation des rôles).
 // COULEURS : la marque de secours utilise les couleurs du super admin (useUI) ; le logo, lui, est affiché tel quel.
 // =========================================================
 

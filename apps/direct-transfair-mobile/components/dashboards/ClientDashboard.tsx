@@ -127,7 +127,7 @@ export default function ClientDashboard() {
         <EmptyView icon="receipt-outline" title={t("home.noTx")} message={t("home.noTxMsg")} />
       ) : (
         recent.map((tx, i) => (
-          <TxRow compact key={tx.id ?? i} tx={tx} userId={user?.id} last={i === recent.length - 1} onPress={() => router.push(`/(tabs)/transactions/${tx.id}`)} />
+          <TxRow compact key={tx.id ?? i} tx={tx} userId={user?.id} last={i === recent.length - 1} onPress={() => router.push(`/operation/${tx.id}` as any)} />
         ))
       )}
     </Screen>

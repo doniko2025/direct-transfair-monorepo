@@ -2,6 +2,10 @@
 // =========================================================
 // TAB LAYOUT v12.1 — Clients wallet uniquement (rôle USER)
 //
+// ✅ v12.2 : CORRECTIF DÉFINITIF « Activité ouvre un détail » — (1) le détail d'une opération ouvert depuis l'accueil / les demandes d'argent
+//   passe maintenant par la route « /operation/<id> » (pile principale) et ne se glisse plus dans la pile de l'onglet Activité ;
+//   (2) la remise sur la liste est aussi déclenchée si la pile contient plus d'une page ; (3) popToTopOnBlur : quand on quitte
+//   l'onglet Activité / Compte / Contacts, sa pile revient seule sur sa liste.
 // ✅ v12.1 : CORRECTIF « Activité n'affiche que le détail » — ouvrir une opération depuis l'accueil laissait seule la page
 //   Détail dans la pile de l'onglet Activité ; toucher l'onglet rouvrait donc ce détail au lieu de la liste. Désormais,
 //   toucher un onglet dont la pile n'est pas sur sa page racine remet d'abord cette pile sur sa liste (Activité, Compte…).
@@ -80,7 +84,7 @@ function CustomTabBar({ state, navigation }: { state: BottomTabBarProps["state"]
     // on la remet sur sa liste « index » avant d'afficher l'onglet, pour qu'un appui sur l'onglet montre toujours sa page principale.
     const nested = state.routes[idx].state;
     const top = nested?.routes?.[nested.routes.length - 1]?.name;
-    if (nested?.key && top && top !== "index") {
+    if (nested?.key && top && (top !== "index" || (nested.routes?.length ?? 0) > 1)) {
       navigation.dispatch({ type: "RESET", payload: { index: 0, routes: [{ name: "index" }] }, target: nested.key });
     }
     navigation.navigate(state.routes[idx].name);
@@ -139,10 +143,10 @@ export default function TabLayout() {
       tabBar={(props) => <CustomTabBar state={props.state as any} navigation={props.navigation as any} />}
     >
       <Tabs.Screen name="home" />
-      <Tabs.Screen name="transactions" />
+      <Tabs.Screen name="transactions" options={{ popToTopOnBlur: true }} />
       <Tabs.Screen name="send" />
-      <Tabs.Screen name="beneficiaries" />
-      <Tabs.Screen name="profile" />
+      <Tabs.Screen name="beneficiaries" options={{ popToTopOnBlur: true }} />
+      <Tabs.Screen name="profile" options={{ popToTopOnBlur: true }} />
       <Tabs.Screen name="index" />
       <Tabs.Screen name="qr" />
       <Tabs.Screen name="notifications" />

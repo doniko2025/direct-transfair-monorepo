@@ -304,6 +304,9 @@ export function TenantProvider({ children }: { children: React.ReactNode }) {
           const enriched: TenantBranding = {
             ...DEFAULT_BRANDING,
             ...parsed,
+            // SÉPARATION DES RÔLES : une société n'hérite JAMAIS du logo de la plateforme (DEFAULT_BRANDING). Sans logo propre,
+            // l'app affiche le monogramme de la société, pas celui de la plateforme ni celui d'une autre société.
+            logoUrl:      parsed.logoUrl      ?? null,
             subdomain:    parsed.subdomain    ?? null,
             customDomain: parsed.customDomain ?? null,
           };

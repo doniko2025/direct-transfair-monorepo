@@ -219,6 +219,9 @@ export function createCompaniesApi(http: HttpClient) {
         (c) => c.code !== SYSTEM_COMPANY_CODE,
       ),
 
+    /** Toutes les sociétés, la société système (la plateforme) comprise : sert à détecter un logo copié d'une autre société. */
+    all: async (): Promise<CompanySummary[]> => asList<CompanySummary>(await http.get<unknown>('/clients')),
+
     get: (id: number) => http.get<CompanyDetail>(`/clients/${id}`),
 
     create: (input: CreateCompanyInput) => http.post<CreateCompanyResult>('/clients', input),

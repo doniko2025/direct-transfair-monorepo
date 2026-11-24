@@ -1,0 +1,6 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 200 200" fill="none" role="img" aria-label="Direct Transf'air">
+  <rect x="1" y="1" width="198" height="198" rx="52" fill="#0E3B2D" stroke="#46C58C" stroke-opacity=".4" stroke-width="2"/>
+  <path d="M88 44 V124 Q88 154 118 154 Q128 154 136 150" stroke="#E8F0EA" stroke-width="20" stroke-linecap="round" stroke-linejoin="round"/>
+  <path d="M56 82 H124" stroke="#E8F0EA" stroke-width="20" stroke-linecap="round"/>
+  <g transform="translate(152 48) rotate(18)"><line x1="0" y1="-14" x2="0" y2="14" stroke="#F5C32C" stroke-width="16" stroke-linecap="round"/></g>
+</svg>

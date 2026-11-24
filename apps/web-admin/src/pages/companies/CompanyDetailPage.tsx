@@ -21,6 +21,7 @@ import {
 } from '../../lib/companyRules';
 import { countryName } from '../../lib/countries';
 import { describeError } from '../../lib/errors';
+import { clashLabel, findLogoClashes } from '../../lib/logoClash';
 import { useResource } from '../../lib/useResource';
 import { ROLE_LABEL } from '../../navigation';
 import { APPEARANCE_FIELDS, IDENTITY_FIELDS, LEGAL_FIELDS, PORTAL_FIELDS, REGISTRATION_FIELDS } from './companyFields';
@@ -49,6 +50,9 @@ export default function CompanyDetailPage() {
     () => (valid ? api.companies.get(companyId) : Promise.resolve(null)),
     [companyId],
   );
+
+  // Logo identique à celui d'une autre entité (plateforme comprise) : signalé en haut de la fiche.
+  const { data: everyone } = useResource(() => api.companies.all().catch(() => null), []);
 
   const [statusTarget, setStatusTarget] = useState<SubscriptionStatus | null>(null);
   const [statusBusy, setStatusBusy] = useState(false);
@@ -158,12 +162,18 @@ export default function CompanyDetailPage() {
 
   const people = company.users ?? [];
   const wallets = company.wallets ?? [];
+  const logoClash = findLogoClashes(everyone ?? []).get(company.id);
 
   return (
     <>
       <PageHeader title={company.name} description={undefined} actions={backLink} />
 
       <div className="stack">
+        {logoClash ? (
+          <Notice tone="info" title="Logo identique à celui d’une autre entité">
+            {`Le logo de ${company.name} est exactement celui de ${clashLabel(logoClash)}. Chaque société doit avoir sa propre identité : la plateforme (société mère) ne partage pas son logo. Remplacez-le dans « Apparence » ci-dessous.`}
+          </Notice>
+        ) : null}
         <Card className="company-hero">
           <CompanyMark name={company.name} logoUrl={company.logoUrl} color={company.primaryColor} size={64} />
           <div className="company-hero__main">

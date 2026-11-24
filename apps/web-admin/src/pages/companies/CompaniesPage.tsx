@@ -14,6 +14,7 @@ import { api } from '../../lib/api';
 import { companyAlerts, groupContractsByCompany, type CompanyAlert } from '../../lib/companyAlerts';
 import { isActiveStatus, safeColor, statusLabel, statusTone } from '../../lib/companyRules';
 import { describeError } from '../../lib/errors';
+import { clashLabel, findLogoClashes, type LogoClash } from '../../lib/logoClash';
 import { MOBILE_QUERY, useMediaQuery } from '../../lib/useMediaQuery';
 import { useResource } from '../../lib/useResource';
 
@@ -33,7 +34,7 @@ function matches(c: CompanySummary, q: string): boolean {
   return hay.includes(q);
 }
 
-function CompanyCard({ company, alerts }: { company: CompanySummary; alerts: CompanyAlert[] }) {
+function CompanyCard({ company, alerts, clash }: { company: CompanySummary; alerts: CompanyAlert[]; clash?: LogoClash }) {
   const users = company._count?.users ?? 0;
   const agencies = company._count?.agencies ?? 0;
   const domain = company.customDomain ?? (company.subdomain ? `${company.subdomain}` : null);
@@ -69,8 +70,9 @@ function CompanyCard({ company, alerts }: { company: CompanySummary; alerts: Com
           )}
         </div>
 
-        {alerts.length > 0 ? (
+        {alerts.length > 0 || clash ? (
           <div className="company-card__alerts" aria-label="À traiter">
+            {clash ? <Pill tone="warn" icon="alert">{`Logo identique à ${clashLabel(clash)}`}</Pill> : null}
             {alerts.map((a) => (
               <Pill key={a.key} tone={a.tone} icon={a.tone === 'neutral' ? 'file' : 'alert'}>
                 {a.label}
@@ -109,6 +111,10 @@ export default function CompaniesPage() {
   const [flashVisible, setFlashVisible] = useState(Boolean(flash?.deleted));
 
   const companies = data ?? [];
+
+  // Logos en double (plateforme comprise) : liste complète, la société système n'étant pas dans la liste affichée.
+  const { data: everyone } = useResource(() => api.companies.all().catch(() => null), []);
+  const clashes = useMemo(() => findLogoClashes(everyone ?? []), [everyone]);
 
   const alertsById = useMemo(() => {
     const grouped = contractsData ? groupContractsByCompany(contractsData) : null;
@@ -249,7 +255,7 @@ export default function CompaniesPage() {
       ) : (
         <ul className="company-grid">
           {visible.map((c) => (
-            <CompanyCard key={c.id} company={c} alerts={alertsById.get(c.id) ?? []} />
+            <CompanyCard key={c.id} company={c} alerts={alertsById.get(c.id) ?? []} clash={clashes.get(c.id)} />
           ))}
         </ul>
       )}

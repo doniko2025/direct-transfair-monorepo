@@ -17,13 +17,15 @@
 //          2. sinon, société = plateforme → le monogramme « t’ » ;
 //          3. sinon (autre société sans logo) → icône neutre « échange ».
 //    Aucun nom ni domaine en dur : le nom reste fourni par la configuration du tenant.
+// ✅ v1.4 : SÉPARATION DES RÔLES — plateforme (société mère) et sociétés ont chacune leur identité. Une société sans logo affiche SON monogramme
+//    (initiales sur sa couleur d'accent), jamais le « t’ » de la plateforme ni une icône générique ; <companyInitials /> en est la règle.
 // Développé par Thierno Doniko (Grand Chef) — Doniko Digital.
 // =========================================================
 
 import React, { useEffect, useRef, useState } from 'react';
 import { AccessibilityInfo, Animated, Easing, Image, Platform, StyleProp, View, ViewStyle } from 'react-native';
 import Svg, { Circle, G, Line, Path, Rect } from 'react-native-svg';
-import { Ionicons } from '../ui/Icon';
+import { Text } from '../ui/Text';
 import { isPlatformCode } from '../../services/platformConfig';
 import { useTenant } from '../../providers/TenantProvider';
 
@@ -223,6 +225,14 @@ export function BrandMark({
   );
 }
 
+/** Initiales d'une société (1 ou 2 lettres) pour son monogramme : « Flash Transfer » → « FT », « Kora » → « K ». */
+export function companyInitials(name: string | null | undefined): string {
+  const words = String(name ?? '').trim().split(/[\s'’\-]+/).filter((w) => /[\p{L}\p{N}]/u.test(w));
+  if (words.length === 0) return '?';
+  const first = (w: string) => (w.match(/[\p{L}\p{N}]/u)?.[0] ?? '').toUpperCase();
+  return (words.length === 1 ? first(words[0]) : first(words[0]) + first(words[1])) || '?';
+}
+
 type TenantMarkProps = {
   size?: number;
   /** Rayon de la tuile quand c'est un logo de société ou l'icône neutre (défaut : 0,3 × taille). */
@@ -257,7 +267,7 @@ export function TenantMark({
     <View style={[{ width: size, height: size, borderRadius: r, backgroundColor: background, alignItems: 'center', justifyContent: 'center', overflow: 'hidden' }, style]}>
       {logoUrl
         ? <Image source={{ uri: logoUrl }} onError={() => setFailedUrl(logoUrl)} style={{ width: `${logoScale * 100}%`, height: `${logoScale * 100}%` }} resizeMode="contain" />
-        : <Ionicons name="swap-horizontal" size={Math.round(size * 0.5)} color={iconColor} />}
+        : <Text style={{ color: iconColor, fontWeight: '800', fontSize: Math.round(size * 0.42), letterSpacing: 0.5 }} accessibilityLabel={branding.name}>{companyInitials(branding.name)}</Text>}
     </View>
   );
 }

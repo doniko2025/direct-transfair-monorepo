@@ -46,7 +46,9 @@ import { safeTop } from "../utils/safeArea";
 import { CurrencyFlag } from "../components/home/HomeParts";
 import Reveal from "../components/flow/Reveal";
 import { useTenant } from "../providers/TenantProvider";
+import { getPlatformName, isPlatformCode } from "../services/platformConfig";
 import { api } from "../services/api";
+import { useServerStatus } from "../services/serverWarmup";
 import type { ExchangeRate } from "../services/types";
 import { lookupRate } from "../utils/rateLookup";
 import { amountFontFor, decimalsFor, fmtMoney, fmtRate, groupAmount, parseAmount, roundTo, sanitizeAmountInput, toInputText } from "../utils/amount";
@@ -128,6 +130,18 @@ export default function Index() {
     return () => { alive = false; clearInterval(timer); sub.remove(); };
   }, []);
 
+  // Réveil du serveur dès l'ouverture de l'app (hébergement gratuit : veille après ~15 min). Dès qu'il répond, on relit les taux TOUT DE SUITE :
+  // sans ça, un premier appel parti pendant le réveil échouait et il fallait attendre jusqu'à 60 s pour voir le taux.
+  const { status: serverStatus } = useServerStatus();
+  useEffect(() => {
+    if (serverStatus !== "ready") return;
+    let alive = true;
+    api.getExchangeRates()
+      .then((list) => { if (alive && list.length > 0) setRates(list); })
+      .catch(() => {});
+    return () => { alive = false; };
+  }, [serverStatus]);
+
   const targets = useMemo(() => (rates ? targetsFrom(rates) : []), [rates]);
   // Devise de réception : celle choisie si elle est publiée, sinon la préférée, sinon la première disponible.
   const target = targets.includes(to) ? to : targets.includes(PREFERRED_TARGET) ? PREFERRED_TARGET : (targets[0] ?? to);
@@ -169,8 +183,9 @@ export default function Index() {
   const top = safeTop(insets.top) + 6;
   const bottom = Math.max(insets.bottom, 10) + 8;
 
-  const rateText = rates === null
-    ? t("land.rateLoading")
+  // Serveur en veille : on le dit au lieu d'un « Chargement du taux… » muet (le réveil prend 30 à 60 s au plus).
+  const rateText = (rates === null || (rate === null && serverStatus === "waking"))
+    ? (serverStatus === "waking" ? t("land.rateWaking") : t("land.rateLoading"))
     : rate === null
       ? t("land.rateNone")
       : t("land.rateLine", { rate: `1 ${FROM} = ${fmtRate(rate)} ${target}` });
@@ -339,6 +354,12 @@ export default function Index() {
                   </Text>
                   .
                 </Text>
+                {/* Société hébergée : la plateforme (société mère) est citée en texte, jamais avec son logo (celui de la société reste seul). */}
+                {!isPlatformCode(branding.code) && (
+                  <Text style={{ textAlign: "center", fontFamily: SYSTEM_FONT, fontSize: 10, color: C.accentInk, opacity: 0.6, lineHeight: 14, marginTop: 4 }}>
+                    {t("land.poweredBy", { name: getPlatformName() })}
+                  </Text>
+                )}
               </Reveal>
             </View>
           </View>

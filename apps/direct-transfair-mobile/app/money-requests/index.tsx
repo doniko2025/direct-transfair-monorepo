@@ -64,7 +64,7 @@ function RequestCard({ r, index, busy, onPay, onClose }: { r: MoneyRequestView; 
                 ? t("grw.mr.askedDiff", { amount: `${fmtMoney(r.amount, r.currency)} ${r.currency}` })
                 : t(received ? "grw.mr.paidSent" : "grw.mr.paidGot")}
             </UText>
-            <Pressable onPress={() => router.push(`/(tabs)/transactions/${s.transactionId}` as any)} hitSlop={8} accessibilityRole="link">
+            <Pressable onPress={() => router.push(`/operation/${s.transactionId}` as any)} hitSlop={8} accessibilityRole="link">
               <UText v="caption" color={C.accentDeep} style={{ fontWeight: "700" }}>{t("grw.mr.seeTx")} ›</UText>
             </Pressable>
           </View>
