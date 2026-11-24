@@ -1,27 +1,28 @@
-CORRECTIF — « Activité » ouvre un détail au lieu de la liste des opérations
-=============================================================================
+CORRECTIF — écran d'accueil qui « saute » pendant ~1 seconde à l'ouverture
+===========================================================================
 
-CAUSE
-  Depuis l'accueil, toucher une opération « Récente » poussait « /(tabs)/transactions/<id> » : la page Détail était posée
-  DANS la pile interne de l'onglet Activité (parfois comme seule page). Comme les onglets gardent leur pile en mémoire,
-  toucher ensuite « Activité » rouvrait ce détail (ex. la facture FAC-… de la capture) au lieu de la liste.
-  Une première rustine (remise sur la liste au toucher de l'onglet) existait déjà mais ne couvrait pas tous les cas.
+CE QUI SE PASSAIT (capture 1 → capture 2)
+  1. Le taux arrivait, puis ~0,5 s plus tard les pastilles « Wallet · Sans frais » / « Cash Pickup · frais … » et la note.
+  2. La carte devenait plus haute : l'écran n'avait plus la place (il est conçu SANS défilement), donc il se « resserrait » tout seul :
+     le bandeau « 3 étapes » disparaissait, le logo passait de 64 à 52, les textes rétrécissaient.
+  3. En plus, les blocs rejouaient leur animation d'apparition (boutons à moitié transparents sur la capture 1).
+  Ce n'était pas un bug de données : une mise en page qui se recalculait après coup.
 
-CORRECTION (à la source + deux garde-fous)
-  1. NOUVELLE route « /operation/<id> » : le détail ouvert depuis l'accueil ou « Demandes d'argent » vit dans la pile
-     principale. Le retour ramène là d'où l'on vient ; la pile de l'onglet Activité ne contient plus jamais ce détail.
-  2. Barre d'onglets : la remise sur la liste se déclenche aussi si la pile a plus d'une page.
-  3. popToTopOnBlur sur Activité, Contacts et Compte : en quittant l'onglet, sa pile revient seule sur sa liste.
+CORRECTION (app/index.tsx v6.7 — fichier complet)
+  - La place des pastilles de frais est RÉSERVÉE dès le départ (bloc invisible de même taille) : la carte garde la même hauteur avant/après.
+  - Les frais sont demandés en même temps que le taux, plus après lui.
+  - Si le serveur est encore en réveil, la place reste réservée et les frais sont redemandés dès qu'il répond.
+  - NOUVEAU : le dernier taux connu de la société est gardé sur l'appareil (24 h max) et affiché tout de suite à l'ouverture ;
+    il est remplacé par le taux frais dès que le serveur répond. Plus de « Chargement du taux… » à chaque ouverture.
 
-FICHIERS (à copier dans apps/direct-transfair-mobile/, mêmes chemins) — fichiers complets
-  app/operation/[id].tsx                     NOUVEAU (ré-exporte l'écran détail existant, aucune logique dupliquée)
-  app/(tabs)/_layout.tsx                     barre d'onglets (v12.2)
-  app/_layout.tsx                            déclare la route operation/[id] (animation « glisser »)
-  components/dashboards/ClientDashboard.tsx  les lignes « Récent » ouvrent /operation/<id>
-  app/money-requests/index.tsx               le lien vers l'opération ouvre /operation/<id>
+ÉTAPES (v6.8) — « les 3 éléments qui disparaissent » (Créez votre compte · Ajoutez un bénéficiaire · Envoyez en quelques secondes)
+  Cause : l'écran n'a pas de défilement et, dès que le contenu dépassait de quelques points, la PREMIÈRE économie était de masquer ce bandeau.
+  Avec les pastilles de frais, le dépassement n'était que de ~3 pt sur votre téléphone : le bandeau disparaissait pour presque rien.
+  Correction : nouvel ordre — 1) on resserre d'abord (logo, montants, marges, et le bandeau lui-même : pastilles 34, libellés 11),
+  2) on ne masque le bandeau qu'en dernier recours (vrai petit écran) ou clavier ouvert.
 
-APRÈS COPIE
-  - Relancer l'app avec le cache vidé : npx expo start -c  (ou reconstruire l'APK : eas build --profile preview --platform android).
-    Ce correctif est du code JavaScript : une ancienne APK ne le contient pas.
-  - Test : Accueil → toucher une opération récente → Retour → toucher « Activité » : la liste s'affiche.
-  - Vérifié : npx tsc --noEmit -p . sans erreur.
+FICHIER (à copier dans apps/direct-transfair-mobile/, même chemin)
+  app/index.tsx
+
+APRÈS COPIE : npx expo start -c (ou nouvelle APK : eas build --profile preview --platform android).
+Vérifié : npx tsc --noEmit -p . sans erreur. Non testé sur appareil.

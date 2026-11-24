@@ -1,6 +1,15 @@
 // apps/direct-transfair-mobile/app/index.tsx
 // =========================================================
 // ACCUEIL v6.6 — Direct Transf'air (white-label)
+// ✅ v6.8 : LES « 3 ÉTAPES » RESTENT AFFICHÉES. Quand l'écran manquait de quelques points de hauteur, la première économie était de MASQUER le bandeau
+//    (puis de rétrécir) : sur un téléphone d'environ 890 pt, il disparaissait pour 3 pt de dépassement, alors qu'un simple resserrage suffit.
+//    Nouvel ordre des économies : 0 = tout · 1 = tailles resserrées (logo, montants, marges) AVEC le bandeau · 2 = + bandeau masqué (vrais petits écrans).
+//    Le bandeau lui-même se resserre au niveau 1 (pastilles 34, libellés 11). Clavier ouvert : toujours masqué, comme avant.
+// ✅ v6.7 : FIN DU « SAUT » À L'OUVERTURE — l'écran se recomposait pendant ~1 s : à l'arrivée du taux, les pastilles de frais apparaissaient,
+//    la carte grandissait, l'écran n'avait plus la place → les « 3 étapes » disparaissaient et le logo / les textes rétrécissaient d'un coup.
+//    Désormais (1) la place des pastilles de frais est RÉSERVÉE dès le départ (bloc invisible de même taille) : la carte ne change plus de hauteur ;
+//    (2) les frais sont demandés en même temps que le taux (plus après lui) ; (3) le dernier taux connu de la société est gardé sur l'appareil et
+//    affiché tout de suite à l'ouverture (puis remplacé par le taux frais dès que le serveur répond, ≤ 24 h).
 // ✅ v6.6 : (1) SANS DÉFILEMENT : la carte du simulateur est plus compacte (marges, lignes de 48, montants 28) et la page s'adapte à la hauteur réelle de
 //    l'écran — si le contenu dépasse encore, le bandeau « 3 étapes » disparaît d'abord, puis les tailles se resserrent (niveaux 0 → 2) ; le défilement
 //    n'est actif que clavier ouvert ; (2) ombre de la carte plus marquée (Android compris : élévation + liseré teinté) ;
@@ -32,7 +41,8 @@
 // Développé par Thierno Doniko (Grand Chef) — Doniko Digital.
 // =========================================================
 
-import React, { useEffect, useMemo, useState } from "react";
+import React, { useEffect, useMemo, useRef, useState } from "react";
+import AsyncStorage from "@react-native-async-storage/async-storage";
 import { AppState, Platform, Pressable, ScrollView, StatusBar, View, useWindowDimensions, type ViewStyle } from "react-native";
 import { useRouter } from "expo-router";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
@@ -63,6 +73,8 @@ const SEND_COUNTRY: Record<string, string> = { EUR: "FR" };
 const RECEIVE_COUNTRY: Record<string, string> = { GNF: "GN" };
 
 type FeeEst = { WALLET: number | null; CASH_PICKUP: number | null };
+/** Valeurs factices (jamais affichées : bloc invisible) qui donnent aux pastilles réservées la même largeur que les vraies. */
+const FEE_PLACEHOLDER: FeeEst = { WALLET: 0, CASH_PICKUP: 0.05 };
 
 /** Lueur de la carte du simulateur : ombre longue teintée par la couleur principale de la société + ombre courte neutre (v6.5). */
 function glowShadow(color: string): ViewStyle {
@@ -103,12 +115,12 @@ export default function Index() {
   const kb = useKeyboardOpen();                         // clavier ouvert : on masque le bandeau « 3 étapes » pour garder la place aux montants
   const { height: winH } = useWindowDimensions();
   // ── Pas de défilement : on mesure la zone visible et la hauteur réelle du contenu. Si ça dépasse, on resserre par niveaux :
-  //    0 = tout (bandeau « 3 étapes » + tailles normales) · 1 = sans bandeau · 2 = sans bandeau + tailles resserrées.
+  //    0 = tout (bandeau « 3 étapes » + tailles normales) · 1 = tailles resserrées, bandeau conservé · 2 = tailles resserrées + sans bandeau.
   const [viewH, setViewH] = useState(0);
   const [contentH, setContentH] = useState(0);
   const [level, setLevel] = useState(0);
-  const showSteps = !kb && level === 0;
-  const tight = level >= 2;                              // tailles resserrées (très petits écrans / police agrandie)
+  const showSteps = !kb && level < 2;                    // le bandeau « 3 étapes » n'est masqué qu'en DERNIER recours (très petit écran) ou clavier ouvert
+  const tight = level >= 1;                              // tailles resserrées (logo, montants, marges, bandeau) dès que la hauteur manque un peu
 
   const [rates, setRates] = useState<ExchangeRate[] | null>(null);   // null = chargement
   const [raw, setRaw] = useState("1");                 // montant tapé dans « Vous envoyez »
@@ -133,6 +145,22 @@ export default function Index() {
   // Réveil du serveur dès l'ouverture de l'app (hébergement gratuit : veille après ~15 min). Dès qu'il répond, on relit les taux TOUT DE SUITE :
   // sans ça, un premier appel parti pendant le réveil échouait et il fallait attendre jusqu'à 60 s pour voir le taux.
   const { status: serverStatus } = useServerStatus();
+  // Dernier taux connu de CETTE société, gardé sur l'appareil : affiché dès l'ouverture, remplacé dès que le serveur répond.
+  const RATES_CACHE_KEY = `land.rates.v1:${branding.code || "-"}`;
+  useEffect(() => {
+    let alive = true;
+    void AsyncStorage.getItem(RATES_CACHE_KEY).then((raw) => {
+      if (!alive || !raw) return;
+      try {
+        const c = JSON.parse(raw) as { at?: number; list?: ExchangeRate[] };
+        if (c?.list?.length && typeof c.at === "number" && Date.now() - c.at < 24 * 3600 * 1000) setRates((prev) => prev ?? c.list!);
+      } catch { /* cache illisible : on l'ignore */ }
+    }).catch(() => {});
+    return () => { alive = false; };
+  }, [RATES_CACHE_KEY]);
+  useEffect(() => {
+    if (rates && rates.length > 0 && serverStatus === "ready") void AsyncStorage.setItem(RATES_CACHE_KEY, JSON.stringify({ at: Date.now(), list: rates })).catch(() => {});
+  }, [rates, serverStatus, RATES_CACHE_KEY]);
   useEffect(() => {
     if (serverStatus !== "ready") return;
     let alive = true;
@@ -153,9 +181,17 @@ export default function Index() {
     : (rate ? roundTo(parseAmount(rawRecv) / rate, decimalsFor(FROM)) : 0);
 
   // ── Frais estimés (public) ──
+  // Demandés en même temps que le taux (ils n'en dépendent pas) et, tant que la réponse n'est pas là, leur place est RÉSERVÉE par un bloc invisible
+  // de même taille : la carte ne change plus de hauteur quand ils arrivent (plus de « saut » ni de bandeau qui disparaît).
   const [feeEst, setFeeEst] = useState<FeeEst | null>(null);
+  const [feeSettled, setFeeSettled] = useState("");
+  const feeEstRef = useRef<FeeEst | null>(null);
+  feeEstRef.current = feeEst;
+  const noRate = rates !== null && rate === null;                // taux connus mais aucun pour cette devise : pas de frais à montrer
+  const serverReady = serverStatus === "ready";
+  const feeKey = `${amount}|${target}|${branding.code}`;
   useEffect(() => {
-    if (!(amount > 0) || rate === null || !branding.code) { setFeeEst(null); return; }
+    if (!(amount > 0) || noRate || !branding.code) { setFeeEst(null); return; }
     let alive = true;
     const timer = setTimeout(async () => {
       const ask = async (payoutMethod: "WALLET" | "CASH_PICKUP") => {
@@ -172,9 +208,13 @@ export default function Index() {
       const [w, c] = await Promise.all([ask("WALLET"), ask("CASH_PICKUP")]);
       if (!alive) return;
       setFeeEst(w === null && c === null ? null : { WALLET: w, CASH_PICKUP: c });
-    }, 450);
+      // Serveur encore en réveil : un échec n'est pas définitif (on relancera dès qu'il répond) → on garde la place réservée.
+      if (w !== null || c !== null || serverReady) setFeeSettled(feeKey);
+    }, feeEstRef.current ? 450 : 60);   // frappe : on attend un peu ; ouverture de l'app : on part tout de suite
     return () => { alive = false; clearTimeout(timer); };
-  }, [amount, rate, target, branding.code]);
+  }, [amount, noRate, target, branding.code, serverReady]); // eslint-disable-line react-hooks/exhaustive-deps
+  const feePending = amount > 0 && !!branding.code && !noRate && !feeEst && serverStatus !== "down" && feeSettled !== feeKey;
+  const feeShown: FeeEst | null = feeEst ?? (feePending ? FEE_PLACEHOLDER : null);
   const received = source === "RECV" ? parseAmount(rawRecv) : (rate !== null ? roundTo(amount * rate, dRecv) : 0);
   // Texte affiché dans chaque champ : celui qu'on saisit reste tel quel (pas de reformatage pendant la frappe), l'autre est calculé.
   const sendText = source === "SEND" ? raw : (rate && amount > 0 ? toInputText(amount, decimalsFor(FROM)) : "");
@@ -192,7 +232,7 @@ export default function Index() {
 
   // Ligne de montant : valeur à gauche, pastille de devise (drapeau + code) à droite.
   // Nouveau calcul de mise en page quand l'écran, le clavier ou la présence des pastilles de frais changent (la carte change alors de hauteur).
-  const hasFees = !!feeEst;
+  const hasFees = !!feeShown;
   useEffect(() => { setLevel(0); }, [winH, kb, hasFees, branding.name]);
   useEffect(() => {
     if (kb || !viewH || !contentH) return;
@@ -285,25 +325,31 @@ export default function Index() {
 
                 <Text style={{ fontFamily: SYSTEM_FONT, fontSize: 12.5, color: C.accentDeep, fontWeight: "600", textAlign: "center", marginTop: tight ? 8 : 10 }}>{rateText}</Text>
 
-                {feeEst && (
-                  <Reveal pop style={{ marginTop: 8 }}>
-                    <View style={{ flexDirection: "row", flexWrap: "wrap", justifyContent: "center", gap: 8 }}>
-                      {([["WALLET", "send.wallet", "phone-portrait-outline"], ["CASH_PICKUP", "send.cash", "cash-outline"]] as const).map(([k, label, icon]) => {
-                        const f = feeEst[k];
-                        if (f === null) return null;
-                        return (
-                          <View key={k} style={{ flexDirection: "row", alignItems: "center", gap: 6, paddingHorizontal: 10, paddingVertical: 5, borderRadius: R.pill ?? 999, backgroundColor: f === 0 ? C.posBg : C.accentSoft, borderWidth: 1, borderColor: f === 0 ? C.posLine : C.accentLine }}>
-                            <Ionicons name={icon} size={14} color={f === 0 ? C.pos : C.accentDeep} />
-                            <Text style={{ fontFamily: SYSTEM_FONT, fontSize: 11.5, fontWeight: "700", color: f === 0 ? C.pos : C.accentDeep }}>
-                              {t(label)} · {f === 0 ? t("land.feesFree") : t("land.feesAmount", { amount: fmtMoney(f, FROM) })}
-                            </Text>
-                          </View>
-                        );
-                      })}
-                    </View>
-                    <Text style={{ fontFamily: SYSTEM_FONT, fontSize: 10.5, color: C.muted, textAlign: "center", marginTop: 6 }}>{t("land.feesNote")}</Text>
-                  </Reveal>
-                )}
+                {feeShown && (() => {
+                  const ghost = !feeEst;   // bloc invisible qui réserve la place (même texte, donc même retour à la ligne que le vrai)
+                  const content = (
+                    <>
+                      <View style={{ flexDirection: "row", flexWrap: "wrap", justifyContent: "center", gap: 8 }}>
+                        {([["WALLET", "send.wallet", "phone-portrait-outline"], ["CASH_PICKUP", "send.cash", "cash-outline"]] as const).map(([k, label, icon]) => {
+                          const f = feeShown[k];
+                          if (f === null) return null;
+                          return (
+                            <View key={k} style={{ flexDirection: "row", alignItems: "center", gap: 6, paddingHorizontal: 10, paddingVertical: 5, borderRadius: R.pill ?? 999, backgroundColor: f === 0 ? C.posBg : C.accentSoft, borderWidth: 1, borderColor: f === 0 ? C.posLine : C.accentLine }}>
+                              <Ionicons name={icon} size={14} color={f === 0 ? C.pos : C.accentDeep} />
+                              <Text style={{ fontFamily: SYSTEM_FONT, fontSize: 11.5, fontWeight: "700", color: f === 0 ? C.pos : C.accentDeep }}>
+                                {t(label)} · {f === 0 ? t("land.feesFree") : t("land.feesAmount", { amount: fmtMoney(f, FROM) })}
+                              </Text>
+                            </View>
+                          );
+                        })}
+                      </View>
+                      <Text style={{ fontFamily: SYSTEM_FONT, fontSize: 10.5, color: C.muted, textAlign: "center", marginTop: 6 }}>{t("land.feesNote")}</Text>
+                    </>
+                  );
+                  return ghost
+                    ? <View style={{ marginTop: 8, opacity: 0 }} pointerEvents="none" accessibilityElementsHidden importantForAccessibility="no-hide-descendants">{content}</View>
+                    : <Reveal pop style={{ marginTop: 8 }}>{content}</Reveal>;
+                })()}
               </View>
             </Reveal>
           </View>
@@ -317,11 +363,11 @@ export default function Index() {
               <Reveal delay={240}>
                 <View style={{ width: "100%", maxWidth: 480, alignSelf: "center", paddingHorizontal: 24, flexDirection: "row", gap: 6 }}>
                   {STEPS.map((st) => (
-                    <View key={st.label} style={{ flex: 1, alignItems: "center", gap: 6 }}>
-                      <View style={[{ width: 40, height: 40, borderRadius: 14, backgroundColor: C.surface, alignItems: "center", justifyContent: "center" }, S.md]}>
-                        <Ionicons name={st.icon} size={19} color={C.sun} />
+                    <View key={st.label} style={{ flex: 1, alignItems: "center", gap: tight ? 4 : 6 }}>
+                      <View style={[{ width: tight ? 34 : 40, height: tight ? 34 : 40, borderRadius: tight ? 12 : 14, backgroundColor: C.surface, alignItems: "center", justifyContent: "center" }, S.md]}>
+                        <Ionicons name={st.icon} size={tight ? 17 : 19} color={C.sun} />
                       </View>
-                      <Text style={{ fontFamily: SYSTEM_FONT, fontSize: 11.5, lineHeight: 14, fontWeight: "700", color: C.accentInk, textAlign: "center" }} numberOfLines={3}>
+                      <Text style={{ fontFamily: SYSTEM_FONT, fontSize: tight ? 11 : 11.5, lineHeight: tight ? 13 : 14, fontWeight: "700", color: C.accentInk, textAlign: "center" }} numberOfLines={3}>
                         {t(st.label)}
                       </Text>
                     </View>
@@ -330,7 +376,7 @@ export default function Index() {
               </Reveal>
             )}
 
-            <View style={{ flexGrow: showSteps ? 0.8 : 0, minHeight: showSteps ? 18 : 0 }} />
+            <View style={{ flexGrow: showSteps ? 0.8 : 0, minHeight: showSteps ? (tight ? 10 : 18) : 0 }} />
 
             <View style={{ width: "100%", maxWidth: 480, alignSelf: "center", paddingHorizontal: 20 }}>
               {/* ── Actions ── */}

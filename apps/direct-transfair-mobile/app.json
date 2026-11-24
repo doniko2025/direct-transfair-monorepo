@@ -34,7 +34,9 @@
       "package": "com.doniko.directtransfair",
       "permissions": [
         "android.permission.CAMERA",
-        "android.permission.READ_CONTACTS"
+        "android.permission.READ_CONTACTS",
+        "android.permission.RECORD_AUDIO",
+        "android.permission.WRITE_CONTACTS"
       ],
       "blockedPermissions": [
         "android.permission.RECORD_AUDIO",
@@ -85,7 +87,9 @@
       "router": {
         "origin": "https://directtransfair.app"
       },
-      "eas": {}
+      "eas": {
+        "projectId": "dd024b9e-ccb1-4b9b-9a4a-c9b8b9fd06c1"
+      }
     },
     "owner": "dftransfer"
   }
