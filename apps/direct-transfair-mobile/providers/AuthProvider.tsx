@@ -1,7 +1,9 @@
 // apps/direct-transfair-mobile/providers/AuthProvider.tsx
 // =========================================================
 // ✅ phase 7 : le code de la société système est lu dans services/platformConfig.ts (plus de « DONIKO » en dur).
-// AUTH PROVIDER v7.5 — Direct Transf'air
+// AUTH PROVIDER v7.6 — Direct Transf'air
+// ✅ v7.6 : à chaque connexion (mot de passe, SMS, biométrie, inscription) le COMPTE CLIENT s'affiche par défaut, même si la personne avait quitté sur son compte
+//    marchand (services/accountSpaceStore.ts › startClientSession). La déconnexion vide l'état du compte actif.
 // ✅ v7.5 : la déconnexion vide aussi la pile de navigation (dismissAll) avant de revenir sur la page d'accueil : plus de retour possible vers les écrans du compte.
 // ✅ v7.4 : la déconnexion ramène sur la page d'accueil (/) et non plus sur l'écran de connexion.
 // ✅ v7.3 : mot de passe temporaire. Si le profil porte `mustChangePassword`, la navigation est bloquée sur
@@ -60,6 +62,7 @@ import * as Linking from "expo-linking";
 import { useRouter, useSegments } from "expo-router";
 import { api } from "../services/api";
 import { registerCurrentDeviceIfNeeded } from "../services/deviceRegistration";
+import { endAccountSpaceSession, startClientSession } from "../services/accountSpaceStore"; // ✅ v7.6
 import { getCurrencyByCountry } from "../data/countries";
 import { isPlatformCode } from "../services/platformConfig";
 import { tr } from "../i18n/runtime";
@@ -252,6 +255,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       api.clearToken();
       setToken(null);
       setUser(null);
+      endAccountSpaceSession(); // ✅ v7.6 : plus de compte actif en mémoire (le prochain login repart sur « client »)
       tokenRef.current = null;
       await removeStorage(TOKEN_KEY);
       await removeStorage(USER_KEY);
@@ -429,6 +433,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
     const enrichedUser = injectCurrencyToUser(rawUser as AuthUser);
     setUser(enrichedUser);
+    startClientSession(enrichedUser?.id); // v7.6 : à chaque connexion, l'app s'ouvre sur le compte CLIENT
 
     await setStorage(TOKEN_KEY, accessToken);
     await setStorage(USER_KEY, JSON.stringify(enrichedUser));
@@ -458,6 +463,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       tokenRef.current = res.access_token;
       const enrichedUser = injectCurrencyToUser(res.user);
       setUser(enrichedUser);
+      startClientSession(enrichedUser?.id); // v7.6 : à chaque connexion, l'app s'ouvre sur le compte CLIENT
       await setStorage(TOKEN_KEY, res.access_token);
       await setStorage(USER_KEY, JSON.stringify(enrichedUser));
       void registerCurrentDeviceIfNeeded();
@@ -494,6 +500,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         tokenRef.current = res.access_token;
         const enrichedUser = injectCurrencyToUser(res.user);
         setUser(enrichedUser);
+        startClientSession(enrichedUser?.id); // v7.6 : à chaque connexion, l'app s'ouvre sur le compte CLIENT
         await setStorage(TOKEN_KEY, res.access_token);
         await setStorage(USER_KEY, JSON.stringify(enrichedUser));
         if (res.refresh_token) {
@@ -570,6 +577,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       if (clientCode) await applyTenant(clientCode);
 
       setUser(enrichedUser);
+      startClientSession(enrichedUser?.id); // v7.6 : à chaque connexion, l'app s'ouvre sur le compte CLIENT
       await setStorage(TOKEN_KEY, newToken);
       await setStorage(USER_KEY, JSON.stringify(enrichedUser));
       void registerCurrentDeviceIfNeeded();
@@ -603,6 +611,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
       const enrichedUser = injectCurrencyToUser(res.user);
       setUser(enrichedUser);
+      startClientSession(enrichedUser?.id); // v7.6 : à chaque connexion, l'app s'ouvre sur le compte CLIENT
 
       await setStorage(TOKEN_KEY, res.access_token);
       await setStorage(USER_KEY, JSON.stringify(enrichedUser));

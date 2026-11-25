@@ -1,12 +1,13 @@
 // apps/direct-transfair-mobile/components/home/ExpressSendCard.tsx
 // =========================================================
-// CARTE « ENVOYER DE L'ARGENT » v1.1 — accueil client (design E)
+// CARTE « ENVOYER DE L'ARGENT » v1.2 — accueil client (design E)
+// ✅ v1.2 : suppression des libellés « Calculé au taux du jour » (champ « Ils reçoivent », remplacé par un 0 grisé) et « frais affichés avant confirmation » (ligne du taux).
 // ✅ v1.1 : espaces de milliers automatiques dans « Vous envoyez » (1 000 000 000), l'état garde le texte brut.
-// Deux champs façon Ria / Wise : « Vous envoyez » (saisie) et « Ils reçoivent » (calculé au taux du jour), un seul bouton
+// Deux champs façon Ria / Wise : « Vous envoyez » (saisie) et « Ils reçoivent » (calculé au taux du jour, sans le dire), un seul bouton
 // « Continuer ». Le bouton ouvre l'écran d'envoi habituel avec le montant déjà rempli (?amount=, déjà géré par send.tsx) :
 // la logique d'envoi (destinataire, frais du serveur, taux garanti, code secret, KYC) reste ENTIÈREMENT dans send.tsx.
 //   • taux : api.getExchangeRates() (chargement borné useLoader) — même formule que « Taux du jour » (paire directe ou inverse) ;
-//     jamais de faux taux : sans taux, « Ils reçoivent » reste vide et la ligne d'aide le dit ;
+//     jamais de faux taux : sans taux, « Ils reçoivent » reste à 0 et la ligne du taux n'apparaît pas ;
 //   • devise du destinataire : celles pour lesquelles un taux existe depuis la devise du compte ; la dernière choisie est
 //     mémorisée sur l'appareil (par défaut GNF, puis XOF) ; le vrai pays est choisi à l'étape « destinataire » de l'envoi ;
 //   • « Taux du jour » ouvre l'écran des taux.
@@ -148,9 +149,8 @@ export default function ExpressSendCard({ currency, countryName, style }: { curr
                 {fmtMoney(received, target)}
               </Text>
             ) : (
-              <Text numberOfLines={1} style={{ fontSize: 14, lineHeight: 26, fontWeight: "500", color: C.muted, marginTop: 2 }}>
-                {t("home.theyGetHint")}
-              </Text>
+              // v1.2 : plus de texte d'aide (« Calculé au taux du jour ») : un simple 0 grisé, comme dans « Vous envoyez ».
+              <Text numberOfLines={1} style={{ fontSize: 20, lineHeight: 26, fontWeight: "700", color: C.faint, marginTop: 2 }}>0</Text>
             )}
           </View>
           {target ? (
@@ -168,9 +168,12 @@ export default function ExpressSendCard({ currency, countryName, style }: { curr
         </View>
       </View>
 
-      <Text style={{ marginTop: 9, fontSize: 12, lineHeight: 16, color: C.muted }}>
-        {rate !== null && target ? t("home.rateLine", { from: currency, to: target, rate: fmtRate(rate) }) : t("home.rateLater")}
-      </Text>
+      {/* v1.2 : seulement le taux (« 1 EUR = 10 500 GNF ») ; plus de « frais affichés avant confirmation » ; rien tant que le taux n'est pas connu. */}
+      {rate !== null && target ? (
+        <Text style={{ marginTop: 9, fontSize: 12, lineHeight: 16, color: C.muted }}>
+          {t("home.rateLine", { from: currency, to: target, rate: fmtRate(rate) })}
+        </Text>
+      ) : null}
 
       <View style={{ marginTop: 10 }}>
         <HomeButton label={t("common.continue")} onPress={goSend} testID="home-send" />

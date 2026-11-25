@@ -34,10 +34,8 @@ export const home = {
   // ── Accueil client v14 : carte « Envoyer de l'argent » et raccourcis ──
   'home.youSend':     { fr: 'Vous envoyez', en: 'You send', pt: 'Você envia' },
   'home.theyGet':     { fr: 'Ils reçoivent', en: 'They receive', pt: 'Eles recebem' },
-  'home.theyGetHint': { fr: 'Calculé au taux du jour', en: "Calculated at today's rate", pt: 'Calculado à taxa do dia' },
   'home.rateOfDay':   { fr: 'Taux du jour', en: "Today's rate", pt: 'Taxa do dia' },
-  'home.rateLine':    { fr: '1 {from} = {rate} {to} · frais affichés avant confirmation', en: '1 {from} = {rate} {to} · fees shown before you confirm', pt: '1 {from} = {rate} {to} · taxas mostradas antes de confirmar' },
-  'home.rateLater':   { fr: 'Frais et taux affichés avant confirmation', en: 'Fees and rate shown before you confirm', pt: 'Taxas e câmbio mostrados antes de confirmar' },
+  'home.rateLine':    { fr: '1 {from} = {rate} {to}', en: '1 {from} = {rate} {to}', pt: '1 {from} = {rate} {to}' },
   'home.pickTarget':  { fr: 'Devise du destinataire', en: "Recipient's currency", pt: 'Moeda do destinatário' },
   'home.amountField': { fr: 'Montant à envoyer', en: 'Amount to send', pt: 'Montante a enviar' },
   'home.sc.topup':    { fr: 'Recharger', en: 'Top up', pt: 'Carregar' },

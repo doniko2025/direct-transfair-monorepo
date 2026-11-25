@@ -1,6 +1,12 @@
 // apps/direct-transfair-mobile/app/index.tsx
 // =========================================================
-// ACCUEIL v6.6 — Direct Transf'air (white-label)
+// ACCUEIL v6.9 — Direct Transf'air (white-label)
+// ✅ v6.9 : LES « 3 ÉTAPES » NE DISPARAISSENT PLUS À TORT (grand vide au milieu de l'écran). Cause : le resserrage par niveaux relisait la hauteur du contenu
+//    AVANT que l'écran ait été re-mesuré avec le niveau précédent. Résultat : le niveau 0 dépassait, on passait au niveau 1, mais l'ancienne mesure (celle du
+//    niveau 0) était relue tout de suite → « ça dépasse encore » → niveau 2 (bandeau masqué) alors que le niveau 1 tenait largement → grand vide.
+//    Désormais : (1) on ne change de niveau qu'après que la mesure est restée STABLE ~150 ms (la nouvelle mesure a eu le temps d'arriver) et on relit
+//    la mesure la plus récente ; (2) l'arrivée des frais (pastilles) ne remet plus l'écran au niveau 0 (plus de « clignotement » grand → petit) : le niveau ne
+//    se réinitialise que si la taille de l'écran, le clavier ou la société changent.
 // ✅ v6.8 : LES « 3 ÉTAPES » RESTENT AFFICHÉES. Quand l'écran manquait de quelques points de hauteur, la première économie était de MASQUER le bandeau
 //    (puis de rétrécir) : sur un téléphone d'environ 890 pt, il disparaissait pour 3 pt de dépassement, alors qu'un simple resserrage suffit.
 //    Nouvel ordre des économies : 0 = tout · 1 = tailles resserrées (logo, montants, marges) AVEC le bandeau · 2 = + bandeau masqué (vrais petits écrans).
@@ -230,15 +236,23 @@ export default function Index() {
       ? t("land.rateNone")
       : t("land.rateLine", { rate: `1 ${FROM} = ${fmtRate(rate)} ${target}` });
 
-  // Ligne de montant : valeur à gauche, pastille de devise (drapeau + code) à droite.
-  // Nouveau calcul de mise en page quand l'écran, le clavier ou la présence des pastilles de frais changent (la carte change alors de hauteur).
-  const hasFees = !!feeShown;
-  useEffect(() => { setLevel(0); }, [winH, kb, hasFees, branding.name]);
+  // Nouveau calcul de mise en page seulement quand la taille de l'écran, le clavier ou la société changent (v6.9 : plus sur l'arrivée des frais, dont la place est déjà réservée).
+  useEffect(() => { setLevel(0); }, [winH, kb, branding.name]);
+  // Dernières mesures connues (relues au moment de décider, jamais une valeur périmée capturée plus tôt).
+  const sizesRef = useRef({ viewH: 0, contentH: 0 });
+  sizesRef.current = { viewH, contentH };
   useEffect(() => {
-    if (kb || !viewH || !contentH) return;
-    if (contentH > viewH + 2 && level < 2) setLevel((l) => l + 1);   // ça dépasse : on resserre d'un cran
+    if (kb || level >= 2 || !viewH || !contentH || contentH <= viewH + 2) return;
+    // v6.9 : juste après un changement de niveau, `contentH` est encore la mesure de l'ANCIEN niveau. On attend que la mesure se stabilise (le nouveau
+    // rendu a le temps d'être mesuré : si elle change, ce minuteur est annulé et recalculé), puis on relit la mesure la plus récente avant de resserrer.
+    const timer = setTimeout(() => {
+      const { viewH: v, contentH: c } = sizesRef.current;
+      if (v > 0 && c > v + 2) setLevel((l) => Math.min(2, l + 1));   // ça dépasse VRAIMENT : on resserre d'un cran
+    }, 150);
+    return () => clearTimeout(timer);
   }, [contentH, viewH, level, kb]);
 
+  // Ligne de montant : valeur à gauche, pastille de devise (drapeau + code) à droite.
   const currencyChip = (cur: string, onPress?: () => void) => {
     const body = (
       <View style={{ flexDirection: "row", alignItems: "center", gap: 6 }}>

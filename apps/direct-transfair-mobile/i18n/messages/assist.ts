@@ -40,6 +40,9 @@ export const assist = {
   'rep.chip':   { fr: 'Renvoyer {amount} à {name}', en: 'Send {amount} to {name} again', pt: 'Reenviar {amount} a {name}' },
   'rep.chipSub':{ fr: 'Même destinataire, même montant', en: 'Same recipient, same amount', pt: 'Mesmo destinatário, mesmo montante' },
   'rep.button': { fr: 'Renvoyer', en: 'Send again', pt: 'Reenviar' },
+  'rep.kicker': { fr: 'Envoi rapide', en: 'Quick send', pt: 'Envio rápido' },
+  'rep.title':  { fr: 'Renvoyer {amount}', en: 'Send {amount} again', pt: 'Reenviar {amount}' },
+  'rep.toName': { fr: 'à {name} · même montant', en: 'to {name} · same amount', pt: 'a {name} · mesmo montante' },
 
   // ── Erreurs qui proposent une action ──
   'err.limitTitle':   { fr: 'Plafond atteint', en: 'Limit reached', pt: 'Limite atingido' },
