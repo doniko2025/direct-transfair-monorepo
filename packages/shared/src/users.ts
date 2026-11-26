@@ -48,6 +48,14 @@ export interface UserSummary {
   client?: { name: string; code: string } | null;
   agency?: { name: string; id: number | string } | null;
   wallets?: UserWallet[];
+  /**
+   * Comptes SÉPARÉS : une même personne peut avoir un compte client, un compte marchand, ou les deux (alors elle apparaît dans les deux listes).
+   * Renvoyés par GET /users ; absents des anciennes réponses (le web retombe alors sur : tout compte USER = client).
+   */
+  hasClientAccount?: boolean;
+  hasMerchantAccount?: boolean;
+  /** Fiche du commerce (compte marchand) : nom du commerce et statut. */
+  merchant?: { businessName: string; status: string } | null;
 }
 
 export interface UserDetail extends Omit<UserSummary, 'client'> {

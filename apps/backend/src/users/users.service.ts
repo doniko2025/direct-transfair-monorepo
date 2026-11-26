@@ -170,10 +170,13 @@ export class UsersService {
   // vérifiable ici, users.controller.ts non fourni).
   // ──────────────────────────────────────────────────────
   async findAll(whereClause: any) {
-    return this.prisma.user.findMany({
+    const rows = await this.prisma.user.findMany({
       where: whereClause,
       orderBy: { createdAt: 'desc' },
       select: {
+        // ✅ v4.7 : de quoi savoir si le compte est « client », « marchand » ou les DEUX (voir le calcul ci-dessous).
+        accountType: true,
+        merchantProfile: { select: { businessName: true, status: true } },
         id: true,
         email: true,
         phone: true,
@@ -203,6 +206,23 @@ export class UsersService {
           },
         },
       },
+    });
+
+    // ✅ v4.7 — comptes SÉPARÉS : un même utilisateur peut avoir un compte client, un compte marchand, ou les deux.
+    //   • compte marchand = une fiche MerchantProfile existe (son portefeuille à lui est rattaché à la fiche, pas à l'utilisateur) ;
+    //   • compte client   = un portefeuille personnel actif (Wallet.userId) — ou, à défaut de fiche marchande, tout compte de rôle USER.
+    // Un compte qui a les deux est renvoyé avec les deux indicateurs à vrai : le web l'affiche alors dans « Clients » ET dans « Marchands ».
+    // Les agents, administrateurs et le service client n'ont ni l'un ni l'autre.
+    return rows.map(({ merchantProfile, ...u }) => {
+      const isWalletUser = u.role === Role.USER;
+      const hasMerchantAccount = isWalletUser && (!!merchantProfile || u.accountType === 'MERCHANT');
+      const hasClientAccount = isWalletUser && ((u.wallets?.length ?? 0) > 0 || !hasMerchantAccount);
+      return {
+        ...u,
+        hasClientAccount,
+        hasMerchantAccount,
+        merchant: merchantProfile ? { businessName: merchantProfile.businessName, status: merchantProfile.status } : null,
+      };
     });
   }
 

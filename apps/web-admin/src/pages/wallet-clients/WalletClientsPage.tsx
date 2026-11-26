@@ -16,7 +16,7 @@ import { countryName } from '../../lib/countries';
 import { describeError } from '../../lib/errors';
 import { MOBILE_QUERY, useMediaQuery } from '../../lib/useMediaQuery';
 import { useResource } from '../../lib/useResource';
-import { ACCOUNT_LABEL, ACCOUNT_TONE, COMPLIANCE_LABEL, COMPLIANCE_TONE, KYC_LABEL, accountState, fullName, initialsOf } from '../../lib/userRules';
+import { ACCOUNT_LABEL, ACCOUNT_TONE, COMPLIANCE_LABEL, COMPLIANCE_TONE, KYC_LABEL, accountState, fullName, hasClientAccount, hasMerchantAccount, initialsOf } from '../../lib/userRules';
 import { CLIENT_TABS, clientMatches, inTab, needsReview, type ClientTab } from '../../lib/walletClientRules';
 
 const PAGE_SIZE = 48;
@@ -60,6 +60,7 @@ function ClientCard({ client }: { client: UserSummary }) {
 
         <div className="wc-card__foot">
           <Pill tone={ACCOUNT_TONE[state]}>{ACCOUNT_LABEL[state]}</Pill>
+          {hasMerchantAccount(client) ? <Pill tone="brand">Aussi marchand</Pill> : null}
           <Pill tone={client.kycLevel === 'LEVEL_0' || !client.kycLevel ? 'warn' : 'neutral'} icon="shield">
             {kycShort(client.kycLevel)}
           </Pill>
@@ -75,7 +76,7 @@ function ClientCard({ client }: { client: UserSummary }) {
 
 export default function WalletClientsPage() {
   const mobile = useMediaQuery(MOBILE_QUERY);
-  const { data, error, loading, reload } = useResource(async () => (await api.users.list()).filter((u) => u.role === 'USER'), []);
+  const { data, error, loading, reload } = useResource(async () => (await api.users.list()).filter(hasClientAccount), []);
   const [query, setQuery] = useState('');
   const [tab, setTab] = useState<ClientTab>('all');
   const [country, setCountry] = useState('');

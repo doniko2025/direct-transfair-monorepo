@@ -1,5 +1,6 @@
 // src/lib/userRules.ts
 // Libellés et règles de gestion des comptes utilisateurs.
+// v2 : comptes client / marchand SÉPARÉS (hasClientAccount, hasMerchantAccount, profileLabels) — un compte qui a les deux apparaît dans les deux listes.
 
 import type { AuthUser, ComplianceStatus, KycLevel } from '@direct-transfair/shared';
 import type { StatusTone } from './companyRules';
@@ -18,6 +19,26 @@ export function roleName(role: string): string {
 
 export function roleTone(role: string): 'brand' | 'neutral' {
   return role === 'SUPER_ADMIN' || role === 'COMPANY_ADMIN' ? 'brand' : 'neutral';
+}
+
+/**
+ * Comptes SÉPARÉS (client / marchand) : un même utilisateur peut avoir l'un, l'autre ou les deux.
+ * Quand le serveur ne renvoie pas encore les indicateurs, on retombe sur l'ancien comportement : tout compte USER est un client.
+ */
+export function hasClientAccount(u: { role: string; hasClientAccount?: boolean }): boolean {
+  return u.role === 'USER' && (u.hasClientAccount ?? true);
+}
+export function hasMerchantAccount(u: { role: string; hasMerchantAccount?: boolean }): boolean {
+  return u.role === 'USER' && (u.hasMerchantAccount ?? false);
+}
+
+/** Libellés de profil d'une carte : un compte qui a les deux affiche « Client wallet » ET « Marchand ». */
+export function profileLabels(u: { role: string; hasClientAccount?: boolean; hasMerchantAccount?: boolean }): string[] {
+  if (u.role !== 'USER') return [roleName(u.role)];
+  const labels: string[] = [];
+  if (hasClientAccount(u)) labels.push('Client wallet');
+  if (hasMerchantAccount(u)) labels.push('Marchand');
+  return labels.length > 0 ? labels : [roleName(u.role)];
 }
 
 export function fullName(u: { firstName: string | null; lastName: string | null; email: string }): string {

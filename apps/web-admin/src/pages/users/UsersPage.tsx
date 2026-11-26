@@ -1,6 +1,8 @@
 // apps/web-admin/src/pages/users/UsersPage.tsx
 // Annuaire des comptes : une carte par utilisateur, filtres par profil et statut,
 // recherche, et (super admin) filtre par société.
+// v2 : comptes client / marchand SÉPARÉS — un onglet « Marchands » s'ajoute ; un compte qui a les deux apparaît dans « Clients » ET dans « Marchands »
+//   (une seule fois dans « Tous »), avec les deux pastilles « Client wallet » et « Marchand ».
 // Le serveur renvoie toute la liste d'un coup (pas de pagination) : le web filtre en mémoire
 // et n'affiche les cartes que par tranches.
 
@@ -21,25 +23,42 @@ import {
   ACCOUNT_TONE,
   accountState,
   fullName,
+  hasClientAccount,
+  hasMerchantAccount,
   initialsOf,
-  roleName,
+  profileLabels,
   roleTone,
 } from '../../lib/userRules';
 import { useCurrentUser } from '../../providers/AuthProvider';
 
-type Profile = 'all' | 'admins' | 'agents' | 'clients';
+type Profile = 'all' | 'admins' | 'agents' | 'clients' | 'merchants';
 
 const PAGE_SIZE = 48;
 
-const PROFILE_ROLES: Record<Exclude<Profile, 'all'>, readonly string[]> = {
+const PROFILE_ROLES = {
   admins: ['SUPER_ADMIN', 'COMPANY_ADMIN'],
   agents: ['AGENT'],
-  clients: ['USER'],
-};
+} as const;
+
+/** Un compte entre dans un onglet selon ce qu'il possède : un compte client ET marchand entre dans les deux onglets. */
+function inProfile(u: UserSummary, profile: Profile): boolean {
+  switch (profile) {
+    case 'all':
+      return true;
+    case 'admins':
+      return (PROFILE_ROLES.admins as readonly string[]).includes(u.role);
+    case 'agents':
+      return u.role === 'AGENT';
+    case 'clients':
+      return hasClientAccount(u);
+    case 'merchants':
+      return hasMerchantAccount(u);
+  }
+}
 
 function matches(u: UserSummary, q: string): boolean {
   if (!q) return true;
-  const hay = [u.firstName, u.lastName, u.email, u.phone, u.client?.name, u.client?.code, u.agency?.name]
+  const hay = [u.firstName, u.lastName, u.email, u.phone, u.client?.name, u.client?.code, u.agency?.name, u.merchant?.businessName]
     .filter(Boolean)
     .join(' ')
     .toLowerCase();
@@ -48,7 +67,7 @@ function matches(u: UserSummary, q: string): boolean {
 
 function UserCard({ user, showCompany }: { user: UserSummary; showCompany: boolean }) {
   const state = accountState(user);
-  const where = [showCompany ? user.client?.name : null, user.agency?.name].filter(Boolean).join(' · ');
+  const where = [showCompany ? user.client?.name : null, user.agency?.name, user.merchant?.businessName].filter(Boolean).join(' · ');
   const since = formatDate(user.createdAt);
 
   return (
@@ -63,7 +82,11 @@ function UserCard({ user, showCompany }: { user: UserSummary; showCompany: boole
           {where ? <span className="user-card__where">{where}</span> : null}
         </div>
         <div className="user-card__pills">
-          <Pill tone={roleTone(user.role)}>{roleName(user.role)}</Pill>
+          {profileLabels(user).map((label) => (
+            <Pill key={label} tone={label === 'Marchand' ? 'brand' : roleTone(user.role)}>
+              {label}
+            </Pill>
+          ))}
           <Pill tone={ACCOUNT_TONE[state]}>{ACCOUNT_LABEL[state]}</Pill>
         </div>
         {since ? <span className="user-card__since">Inscrit le {since}</span> : null}
@@ -107,15 +130,16 @@ export default function UsersPage() {
   const counts = useMemo(
     () => ({
       all: scoped.length,
-      admins: scoped.filter((u) => PROFILE_ROLES.admins.includes(u.role)).length,
-      agents: scoped.filter((u) => u.role === 'AGENT').length,
-      clients: scoped.filter((u) => u.role === 'USER').length,
+      admins: scoped.filter((u) => inProfile(u, 'admins')).length,
+      agents: scoped.filter((u) => inProfile(u, 'agents')).length,
+      clients: scoped.filter((u) => inProfile(u, 'clients')).length,
+      merchants: scoped.filter((u) => inProfile(u, 'merchants')).length,
     }),
     [scoped],
   );
 
   const visible = useMemo(
-    () => (profile === 'all' ? scoped : scoped.filter((u) => PROFILE_ROLES[profile].includes(u.role))),
+    () => scoped.filter((u) => inProfile(u, profile)),
     [scoped, profile],
   );
 
@@ -124,6 +148,7 @@ export default function UsersPage() {
     { id: 'admins', label: 'Administrateurs', count: counts.admins },
     { id: 'agents', label: 'Agents', count: counts.agents },
     { id: 'clients', label: 'Clients', count: counts.clients },
+    { id: 'merchants', label: 'Marchands', count: counts.merchants },
   ];
 
   const filtered = query.trim() !== '' || company !== '' || onlySuspended || profile !== 'all';
@@ -143,7 +168,7 @@ export default function UsersPage() {
         description={
           isSuper
             ? 'Les administrateurs de vos sociétés. Les agents et les clients sont gérés par chaque société.'
-            : 'Les comptes de votre société : administrateurs, agents et clients wallet.'
+            : 'Les comptes de votre société : administrateurs, agents, clients wallet et marchands. Un compte qui est à la fois client et marchand apparaît dans les deux.'
         }
         actions={
           isSuper ? (

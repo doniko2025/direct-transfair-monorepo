@@ -8,6 +8,7 @@ import { Pill } from '../../components/ui';
 import { api } from '../../lib/api';
 import { agentName, managerOf } from '../../lib/agencyRules';
 import { formatAmount } from '../../lib/companyRules';
+import { hasClientAccount } from '../../lib/userRules';
 import { amountsLabel, needsAttention, newestFirst, todaySummary } from '../../lib/dashboardRules';
 import { useCurrentUser } from '../../providers/AuthProvider';
 import { useTenant } from '../../providers/TenantProvider';
@@ -23,7 +24,7 @@ export function AdminDashboard() {
   const txs = useResource(() => api.transactions.listAdmin(), []);
   const agencies = useResource(() => api.agencies.list(), []);
   const agents = useResource(() => api.agents.list(), []);
-  const clients = useResource(async () => (await api.users.list()).filter((u) => u.role === 'USER').length, []);
+  const clients = useResource(async () => (await api.users.list()).filter(hasClientAccount).length, []);
   const overview = useResource(() => api.treasury.overview(), []);
   const commissions = useResource(() => api.commissions.company('month', { limit: 1 }), []);
 
